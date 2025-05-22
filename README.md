@@ -81,7 +81,13 @@ If you want to use the system-installed PyQt5 instead of installing it inside th
     ```bash
     pip install .
     ```
+   #### For editable mode:
 
+      ```bash
+      pip install --editable .
+      This will install your package locally with the CLI command max30102-gui available.
+      ```
+      
 6.  **Run the GUI:**
 
     ```bash
