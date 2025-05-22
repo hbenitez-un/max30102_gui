@@ -6,6 +6,7 @@ from matplotlib.figure import Figure
 import threading
 import time
 from scipy.signal import find_peaks
+from scipy.signal import butter, filtfilt
 
 # Import the sensor driver
 from sensor.max30102 import MAX30102
@@ -23,8 +24,13 @@ class PulsePlot(FigureCanvas):
     def update_plot(self, new_val):
         self.data = self.data[1:] + [new_val]
         self.line.set_ydata(self.data)
-        self.ax.draw_artist(self.line)
+        self.ax.set_ylim(min(self.data) - 1000, max(self.data) + 1000)  # autoajuste
         self.draw()
+        self.ax.set_title("MAX30102 Pulse Monitor")
+        self.ax.set_xlabel("Time")
+        self.ax.set_ylabel("IR LED Value")
+        self.ax.grid(True)
+
 
 
 class MainApp(QMainWindow):
@@ -54,25 +60,40 @@ class MainApp(QMainWindow):
     def read_sensor(self):
         ir_data = []
         while True:
-            _, ir = self.sensor.read_sequential()
-            if ir:
-                ir_data.extend(ir[-10:])
-                for val in ir[-10:]:
-                    self.plot.update_plot(val)
+            try:
+                red, ir = self.sensor.read_fifo()
+                ir_data.append(ir)
+                self.plot.update_plot(ir)
 
-                if len(ir_data) > 200:
-                    ir_data = ir_data[-200:]
+                # Limita el tamaño del buffer
+                if len(ir_data) > 300:
+                    ir_data = ir_data[-300:]
+
+                if len(ir_data) >= 200:
                     bpm = self.calc_bpm(ir_data)
                     self.label_bpm.setText(f"BPM: {bpm:.1f}")
                     self.label_status.setText(f"Status: {self.classify_bpm(bpm)}")
-            time.sleep(1)
 
+                time.sleep(0.05)  # más rápido y más responsivo que 1s
+            except Exception as e:
+                print(f"Error reading sensor: {e}")
+                time.sleep(1)
+
+    def butter_lowpass_filter(data, cutoff=2.5, fs=100, order=2):
+            nyq = 0.5 * fs  # Frecuencia de Nyquist
+            normal_cutoff = cutoff / nyq
+            b, a = butter(order, normal_cutoff, btype='low', analog=False)
+            y = filtfilt(b, a, data)
+            return y
+    
     def calc_bpm(self, ir_data, fs=100):
-        peaks, _ = find_peaks(ir_data, distance=fs * 0.6)
+        filtered = self.butter_lowpass_filter(ir_data, cutoff=2.5, fs=fs, order=2)
+        peaks, _ = find_peaks(filtered, distance=fs * 0.6)
         if len(peaks) < 2:
             return 0
         rr = np.diff(peaks) / fs
         return 60 / np.mean(rr)
+
 
     def classify_bpm(self, bpm):
         if bpm < 60:
@@ -80,6 +101,16 @@ class MainApp(QMainWindow):
         elif bpm > 100:
             return "Tachycardia"
         return "Normal"
+    
+    
+
+
+    def closeEvent(self, event):
+        ''' Override closeEvent to handle cleanup before closing the window'''
+        self.sensor.shutdown()
+        event.accept()
+
+
 
 
 def main():
