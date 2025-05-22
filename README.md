@@ -80,18 +80,18 @@ If you want to use the system-installed PyQt5 instead of installing it inside th
 
     There are two ways to install the package:
 
-1.  **Standard Installation:**
+   1.  **Standard Installation:**
 
-    ```bash
-    pip install .
-    ```
+      ```bash
+      pip install .
+      ```
 
-2.  **For Editable Mode (Recommended for Development):**
+   2.  **For Editable Mode (Recommended for Development):**
 
-    ```bash
-    pip install --editable .
-    ```
-    This will install your package locally with the CLI command `max30102-gui` available, and any changes you make to the source code will be reflected immediately without re-installation.
+      ```bash
+      pip install --editable .
+      ```
+      This will install your package locally with the CLI command `max30102-gui` available, and any changes you make to the source code will be reflected immediately without re-installation.
 
 
 6.  **Run the GUI:**
