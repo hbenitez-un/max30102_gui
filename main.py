@@ -8,7 +8,7 @@ import time
 from scipy.signal import find_peaks
 
 # Import the sensor driver
-from max30102_gui.sensor import max30102
+from sensor.max30102 import MAX30102
 
 
 class PulsePlot(FigureCanvas):
