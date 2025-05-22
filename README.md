@@ -34,8 +34,8 @@ Tested on Raspberry Pi 3B.
 
 2. **Clone the repository**:
    ```bash
-    git clone ....
-    cd max30102_gui_package
+    git clone https://github.com/hbenitez-un/max30102_gui.git
+    cd max30102_gui
 
 3. **Create a virtual environment**:
    ```bash
