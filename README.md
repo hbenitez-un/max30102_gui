@@ -76,9 +76,9 @@ If you want to use the system-installed PyQt5 instead of installing it inside th
     python3 -c 'from PyQt5 import QtWidgets; print("PyQt5 is working!")'
     ```
 
-5.  ***Install the Package:**
+5.  **Install the Package:**
 
-There are two ways to install the package:
+    There are two ways to install the package:
 
 1.  **Standard Installation:**
 
