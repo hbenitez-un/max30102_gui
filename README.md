@@ -65,7 +65,6 @@ Driver: doug-burrell/max30102
 
 
 **Project Structure**
-'''arduino
 max30102_gui_package/
 ├── max30102_gui/
 │   ├── main.py
