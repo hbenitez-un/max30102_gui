@@ -33,22 +33,22 @@ Tested on Raspberry Pi 3B.
    sudo apt install python3-full python3-venv git
 
 2. **Clone the repository**:
-
-git clone ....
-cd max30102_gui_package
+   ```bash
+    git clone ....
+    cd max30102_gui_package
 
 3. **Create a virtual environment**:
-
-python3 -m venv venv
-source venv/bin/activate
+   ```bash
+    python3 -m venv venv
+    source venv/bin/activate
 
 4. **Install the package**:
-
-pip install .
+   ```bash
+    pip install .
 
 5. **Run the GUI**:
-
-max30102-gui
+   ```bash
+    max30102-gui
 
 
 **Sensor Used**
@@ -65,9 +65,6 @@ Driver: doug-burrell/max30102
 
 
 **Project Structure**
-arduino
-Copiar
-Editar
 max30102_gui_package/
 ├── max30102_gui/
 │   ├── main.py
@@ -76,6 +73,7 @@ max30102_gui_package/
 ├── setup.py
 ├── README.md
 └── requirements.txt
+
 **License**
 MIT License.
 Original MAX30102 driver by Doug Burrell.
