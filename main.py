@@ -1,0 +1,89 @@
+import sys
+import numpy as np
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+import threading
+import time
+from scipy.signal import find_peaks
+
+# Import the sensor driver
+from max30102_gui.sensor import max30102
+
+
+class PulsePlot(FigureCanvas):
+    def __init__(self, parent=None):
+        self.fig = Figure()
+        self.ax = self.fig.add_subplot(111)
+        super().__init__(self.fig)
+        self.data = [0] * 100
+        self.line, = self.ax.plot(self.data, 'r-')
+        self.ax.set_ylim(0, 200000)
+
+    def update_plot(self, new_val):
+        self.data = self.data[1:] + [new_val]
+        self.line.set_ydata(self.data)
+        self.ax.draw_artist(self.line)
+        self.draw()
+
+
+class MainApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("MAX30102 Pulse Monitor")
+        self.resize(600, 400)
+
+        self.plot = PulsePlot(self)
+        self.label_bpm = QLabel("BPM: 0")
+        self.label_status = QLabel("Status: Normal")
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.plot)
+        layout.addWidget(self.label_bpm)
+        layout.addWidget(self.label_status)
+
+        container = QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
+
+        self.sensor = max30102.MAX30102()
+        self.thread = threading.Thread(target=self.read_sensor)
+        self.thread.daemon = True
+        self.thread.start()
+
+    def read_sensor(self):
+        ir_data = []
+        while True:
+            _, ir = self.sensor.read_sequential()
+            if ir:
+                ir_data.extend(ir[-10:])
+                for val in ir[-10:]:
+                    self.plot.update_plot(val)
+
+                if len(ir_data) > 200:
+                    ir_data = ir_data[-200:]
+                    bpm = self.calc_bpm(ir_data)
+                    self.label_bpm.setText(f"BPM: {bpm:.1f}")
+                    self.label_status.setText(f"Status: {self.classify_bpm(bpm)}")
+            time.sleep(1)
+
+    def calc_bpm(self, ir_data, fs=100):
+        peaks, _ = find_peaks(ir_data, distance=fs * 0.6)
+        if len(peaks) < 2:
+            return 0
+        rr = np.diff(peaks) / fs
+        return 60 / np.mean(rr)
+
+    def classify_bpm(self, bpm):
+        if bpm < 60:
+            return "Bradycardia"
+        elif bpm > 100:
+            return "Tachycardia"
+        return "Normal"
+
+
+def main():
+    app = QApplication(sys.argv)
+    window = MainApp()
+    window.show()
+    sys.exit(app.exec_())
