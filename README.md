@@ -73,7 +73,7 @@ If you want to use the system-installed PyQt5 instead of installing it inside th
 4.  **Test PyQt5 installation:**
 
     ```bash
-    python3 -c "from PyQt5 import QtWidgets; print('PyQt5 is working!')"
+    python3 -c 'from PyQt5 import QtWidgets; print("PyQt5 is working!")'
     ```
 
 5.  **Install the package:**

@@ -15,7 +15,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "max30102-gui=max30102_gui.main:main"
+            "max30102-gui=main:main"
         ]
     },
     include_package_data=True,
