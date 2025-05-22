@@ -66,7 +66,7 @@ Driver: doug-burrell/max30102
 
 **Project Structure** --->
 
-max30102_gui_package/
+max30102_gui/
 ├── max30102_gui/
 │   ├── main.py
 │   └── sensor/

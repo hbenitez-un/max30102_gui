@@ -46,7 +46,7 @@ class MainApp(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-        self.sensor = max30102.MAX30102()
+        self.sensor = MAX30102()
         self.thread = threading.Thread(target=self.read_sensor)
         self.thread.daemon = True
         self.thread.start()
