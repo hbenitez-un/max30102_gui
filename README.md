@@ -64,7 +64,8 @@ Driver: doug-burrell/max30102
 | > 100       | Tachycardia |
 
 
-**Project Structure**
+**Project Structure** --->
+
 max30102_gui_package/
 ├── max30102_gui/
 │   ├── main.py
