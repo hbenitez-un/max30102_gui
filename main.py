@@ -187,7 +187,7 @@ class MainApp(QMainWindow):
                         if max(self.ir_data[-batch_size:]) < self.IR_THRESHOLD:
                             status = "No finger detected"
                             bpm = 0
-                        elif len(self.ir_data) >= 200:  # Calculate BPM if enough data is collected
+                        elif len(self.ir_data) >= 400:  # Calculate BPM if enough data is collected --> 400 = ~4seg at 100Hz
                             bpm = self.calc_bpm(self.ir_data)
                             status = self.classify_bpm(bpm)
                         
