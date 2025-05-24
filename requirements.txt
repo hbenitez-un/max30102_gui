@@ -3,4 +3,4 @@ matplotlib>=3.5
 numpy>=1.21
 scipy>=1.7
 smbus2>=0.4.2   # Needed on Raspberry Pi for I2C communication
-
+pyqtgraph>=0.13

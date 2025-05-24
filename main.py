@@ -1,18 +1,13 @@
 import sys
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-import threading
-import time
-from scipy.signal import find_peaks
-from scipy.signal import butter, filtfilt
 from PyQt5.QtCore import QTimer
 from scipy.signal import find_peaks, butter, filtfilt
+import pyqtgraph as pg
 import threading
 import time
 
-# Import the sensor driver
+# Sensor
 from sensor.max30102 import MAX30102
 
 
@@ -26,16 +21,22 @@ def butter_lowpass_filter(data, cutoff=2.5, fs=100, order=2):
 class MainApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Heart Rate Monitor")
-        self.resize(300, 200)
+        self.setWindowTitle("MAX30102 Heart Rate Monitor")
+        self.resize(600, 400)
 
-        # Minimal BPM display
+        # === GUI Elements ===
         self.label_bpm = QLabel("BPM: --")
-        self.label_bpm.setStyleSheet("font-size: 48px; font-weight: bold; color: red;")
+        self.label_bpm.setStyleSheet("font-size: 40px; font-weight: bold; color: red;")
         self.label_status = QLabel("Status: --")
         self.label_status.setStyleSheet("font-size: 20px;")
 
+        self.graph = pg.PlotWidget()
+        self.graph.setYRange(0, 200000)
+        self.graph.setTitle("IR Signal")
+        self.plot_line = self.graph.plot(pen='r')
+
         layout = QVBoxLayout()
+        layout.addWidget(self.graph)
         layout.addWidget(self.label_bpm)
         layout.addWidget(self.label_status)
 
@@ -43,13 +44,20 @@ class MainApp(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
+        # === Sensor + Data ===
         self.sensor = MAX30102()
         self.ir_data = []
         self.last_bpm_time = time.time()
 
+        # Start sensor reading thread
         self.thread = threading.Thread(target=self.read_sensor)
         self.thread.daemon = True
         self.thread.start()
+
+        # Update graph with timer
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_plot)
+        self.timer.start(100)  # 10 FPS aprox
 
     def read_sensor(self):
         while True:
@@ -57,11 +65,11 @@ class MainApp(QMainWindow):
                 red, ir = self.sensor.read_fifo()
                 self.ir_data.append(ir)
 
-                # Mantener buffer limitado a 300 muestras (~3 segundos a 100 Hz)
+                # Mantén los últimos 300 puntos (3s)
                 if len(self.ir_data) > 300:
                     self.ir_data = self.ir_data[-300:]
 
-                # Calcular BPM cada 1 segundo si hay suficientes datos
+                # Calcular BPM cada 1s si hay suficientes muestras
                 if len(self.ir_data) >= 200 and time.time() - self.last_bpm_time > 1:
                     bpm = self.calc_bpm(self.ir_data)
                     self.label_bpm.setText(f"{bpm:.1f} BPM")
@@ -70,8 +78,12 @@ class MainApp(QMainWindow):
 
                 time.sleep(0.05)  # 20 Hz
             except Exception as e:
-                print(f"Error reading sensor: {e}")
+                print(f"Sensor error: {e}")
                 time.sleep(1)
+
+    def update_plot(self):
+        if self.ir_data:
+            self.plot_line.setData(self.ir_data)
 
     def calc_bpm(self, data, fs=100):
         try:
@@ -79,11 +91,10 @@ class MainApp(QMainWindow):
             peaks, _ = find_peaks(filtered, distance=fs * 0.6)
             if len(peaks) < 2:
                 return 0
-            rr_intervals = np.diff(peaks) / fs
-            bpm = 60 / np.mean(rr_intervals)
-            return bpm
+            rr = np.diff(peaks) / fs
+            return 60 / np.mean(rr)
         except Exception as e:
-            print(f"Error in BPM calc: {e}")
+            print(f"BPM error: {e}")
             return 0
 
     def classify_bpm(self, bpm):
