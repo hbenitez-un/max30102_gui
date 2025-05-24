@@ -180,8 +180,8 @@ class MainApp(QMainWindow):
 
                     # Add new IR sample
                     self.ir_data.append(ir)
-                    if len(self.ir_data) > 500:  # Keep 5 seconds of data at 100Hz
-                        self.ir_data = self.ir_data[-500:]
+                    if len(self.ir_data) > 800:  # Keep 5 seconds of data at 100Hz
+                        self.ir_data = self.ir_data[-800:]
 
                     bpm = 0
                     status = "No data"
@@ -191,7 +191,7 @@ class MainApp(QMainWindow):
                         status = "No finger detected"
                         bpm = 0
                         self.bpm_history.clear()
-                    elif len(self.ir_data) >= 400:  # At least 4 sec of data to calculate BPM
+                    elif len(self.ir_data) >= 600:  # At least 4 sec of data to calculate BPM
                         bpm = self.calc_bpm(self.ir_data)
                         status = self.classify_bpm(bpm)
 
