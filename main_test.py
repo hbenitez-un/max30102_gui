@@ -158,7 +158,7 @@ class MainApp(QMainWindow):
 
         # Create data emitter for thread-safe signal emission
         self.data_emitter = DataEmitter()
-        self.data_emitter.new_data.connect(self.update_plot)
+        self.data_emitter.new_data.connect(self.plot.update_plot)
         self.data_emitter.new_bpm_status.connect(self.update_bpm_status_labels) # Conectar nueva señal
 
         self.running = True  # Flag to control the sensor thread
