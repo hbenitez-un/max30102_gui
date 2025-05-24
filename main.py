@@ -167,7 +167,7 @@ class MainApp(QMainWindow):
 
         while self.running:
             try:
-                red, ir = self.sensor.read_fifo()
+                red, ir = self.sensor.read_fifo() # Red is for SPO2
                 batch.append(ir)
 
                 if len(batch) >= batch_size:
@@ -206,7 +206,7 @@ class MainApp(QMainWindow):
 
                     self.csv_data.append((timestamp, readable_time, ir, f"{bpm:.1f}", status))
 
-                time.sleep(0.04)
+                time.sleep(0.0)
 
             except Exception as e:
                 print(f"Error reading sensor: {e}")
