@@ -14,10 +14,9 @@ from datetime import datetime
 import os
 from sensor.max30102 import MAX30102
 
-#IR_THRESHOLD = 30000
 
 class DataEmitter(QObject):
-    new_data = pyqtSignal(list)
+    new_data = pyqtSignal(list)  # Señal para enviar lote de datos IR
 
 
 class PulsePlot(pg.PlotWidget):
@@ -28,6 +27,7 @@ class PulsePlot(pg.PlotWidget):
         self.setLabel('left', "IR Value", **{'color': 'black', 'font-size': '12pt'})
         self.setLabel('bottom', "Sample", **{'color': 'black', 'font-size': '12pt'})
         self.showGrid(x=True, y=True)
+
         self.curve = self.plot(pen=pg.mkPen(color='r', width=2))
         self.buffer_size = 300
         self.data = np.zeros(self.buffer_size, dtype=int)
@@ -62,10 +62,9 @@ class MainApp(QMainWindow):
         self.resize(700, 500)
 
         self.plot = PulsePlot(self)
-        self.label_bpm = QLabel("BPM: --", alignment=Qt.AlignCenter)
+        self.label_bpm = QLabel("BPM: 0", alignment=Qt.AlignCenter)
         self.label_bpm.setStyleSheet("font-size: 24pt; font-weight: bold; color: #333;")
-
-        self.label_status = QLabel("Status: Waiting...", alignment=Qt.AlignCenter)
+        self.label_status = QLabel("Status: Normal", alignment=Qt.AlignCenter)
         self.label_status.setStyleSheet("font-size: 14pt; color: #666;")
 
         self.btn_toggle = QPushButton("Start Measurement")
@@ -91,10 +90,7 @@ class MainApp(QMainWindow):
         self.setCentralWidget(container)
 
         self.sensor = MAX30102()
-        # self.sensor.setup(led_current=0x1F, sample_rate=100, pulse_width=411)  # Optional config
-
         self.ir_data = []
-        self.recent_ir_values = []
         self.csv_data = []
         self.measuring = False
 
@@ -110,40 +106,20 @@ class MainApp(QMainWindow):
         if self.measuring:
             self.ir_data.clear()
             self.csv_data.clear()
-            self.label_bpm.setText("BPM: --")
-            self.label_status.setText("Status: Waiting for finger...")
             self.btn_toggle.setText("Stop Measurement")
         else:
             self.btn_toggle.setText("Start Measurement")
             self.export_csv(auto=True)
 
     def read_sensor(self):
-        batch_size = 20
+        batch_size = 10
         batch = []
 
         while True:
             try:
                 red, ir = self.sensor.read_fifo()
-
-                # Descartar valores extremos (ruido)
-                if ir < 5000 or ir > 200000:
-                    continue
-
-                # Actualizar histórico de IR para detección de dedo
-                self.recent_ir_values.append(ir)
-                if len(self.recent_ir_values) > 50:
-                    self.recent_ir_values.pop(0)
-
-                # Promedio móvil de los últimos IR para detectar dedo
-                avg_ir = np.mean(self.recent_ir_values)
-                std_ir = np.std(self.recent_ir_values)
-
-                # Dedo detectado si IR supera el promedio reciente en al menos 5%
-                #finger_detected = ir > avg_ir * 1.05 and std_ir > 1000
-                finger_detected = ir > 30000
-
-                # Acumular lote para graficar
                 batch.append(ir)
+
                 if len(batch) >= batch_size:
                     self.data_emitter.new_data.emit(batch)
                     batch.clear()
@@ -152,47 +128,32 @@ class MainApp(QMainWindow):
                     timestamp = time.time()
                     readable_time = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
-                    if finger_detected:
-                        self.ir_data.append(ir)
-                        if len(self.ir_data) > 300:
-                            self.ir_data = self.ir_data[-300:]
+                    self.ir_data.append(ir)
+                    if len(self.ir_data) > 300:
+                        self.ir_data = self.ir_data[-300:]
 
-                        bpm = 0
-                        status = "No data"
+                    bpm = 0
+                    status = "No data"
 
-                        if len(self.ir_data) >= 200:
-                            bpm = self.calc_bpm(self.ir_data)
-                            status = self.classify_bpm(bpm)
-                            self.label_bpm.setText(f"BPM: {bpm:.1f}")
-                            self.label_status.setText(f"Status: {status}")
-                    else:
-                        self.ir_data.clear()
-                        bpm = 0
-                        status = "Waiting for finger..."
-                        self.label_bpm.setText("BPM: --")
+                    if len(self.ir_data) >= 200:
+                        bpm = self.calc_bpm(self.ir_data)
+                        status = self.classify_bpm(bpm)
+
+                        self.label_bpm.setText(f"BPM: {bpm:.1f}")
                         self.label_status.setText(f"Status: {status}")
 
                     self.csv_data.append((timestamp, readable_time, ir, f"{bpm:.1f}", status))
 
-                else:
-                    self.label_bpm.setText("BPM: --")
-                    self.label_status.setText("Status: Finger off")
-
                 time.sleep(0.01)
-            except Exception as e:
-                print(f"Error reading sensor: {e}")
-                time.sleep(1)
 
+            except Exception as e:
+                print(f"Error leyendo sensor: {e}")
+                time.sleep(1)
 
     def update_plot(self, new_vals):
         self.plot.update_plot(new_vals)
 
-    def moving_average(self, data, window_size=5):
-        if len(data) < window_size:
-            return np.array(data)
-        return np.convolve(data, np.ones(window_size) / window_size, mode='valid')
-
-    def butter_lowpass_filter(self, data, cutoff=4, fs=100, order=2):
+    def butter_lowpass_filter(self, data, cutoff=2.5, fs=100, order=2):
         nyq = 0.5 * fs
         normal_cutoff = cutoff / nyq
         b, a = butter(order, normal_cutoff, btype='low', analog=False)
@@ -200,10 +161,8 @@ class MainApp(QMainWindow):
         return y
 
     def calc_bpm(self, ir_data, fs=100):
-        smoothed = self.moving_average(ir_data, window_size=5)
-        filtered = self.butter_lowpass_filter(smoothed, cutoff=2.5, fs=fs, order=2)
-        peaks, _ = find_peaks(filtered, distance=fs * 0.6, prominence=0.1 * np.max(filtered))
-
+        filtered = self.butter_lowpass_filter(ir_data, cutoff=2.5, fs=fs, order=2)
+        peaks, _ = find_peaks(filtered, distance=fs * 0.6)
         if len(peaks) < 2:
             return 0
         rr_intervals = np.diff(peaks) / fs
