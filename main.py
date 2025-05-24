@@ -90,10 +90,10 @@ class MainApp(QMainWindow):
 
         # Setup UI components
         self.plot = PulsePlot(self)
-        self.label_bpm = QLabel("BPM: 0", alignment=Qt.AlignCenter)
+        self.label_bpm = QLabel("BPM: --", alignment=Qt.AlignCenter)
         self.label_bpm.setStyleSheet("font-size: 24pt; font-weight: bold; color: #333;")
 
-        self.label_status = QLabel("Status: Normal", alignment=Qt.AlignCenter)
+        self.label_status = QLabel("Status: Waiting...", alignment=Qt.AlignCenter)
         self.label_status.setStyleSheet("font-size: 14pt; color: #666;")
 
         self.btn_toggle = QPushButton("Start Measurement")
@@ -102,7 +102,7 @@ class MainApp(QMainWindow):
 
         self.btn_export = QPushButton("Export CSV")
         self.btn_export.setStyleSheet("padding: 10px; font-size: 12pt;")
-        self.btn_export.clicked.connect(self.export_csv)  # Connect without calling
+        self.btn_export.clicked.connect(self.export_csv)
 
         # Layout setup for buttons
         button_layout = QHBoxLayout()
@@ -135,6 +135,9 @@ class MainApp(QMainWindow):
         self.thread.daemon = True
         self.thread.start()
 
+        # Threshold to detect if finger is on the sensor (adjust experimentally)
+        self.finger_on_threshold = 5000
+
     def toggle_measurement(self):
         """
         Start or stop the measurement.
@@ -145,6 +148,8 @@ class MainApp(QMainWindow):
         if self.measuring:
             self.ir_data.clear()
             self.csv_data.clear()
+            self.label_bpm.setText("BPM: --")
+            self.label_status.setText("Status: Waiting for finger...")
             self.btn_toggle.setText("Stop Measurement")
         else:
             self.btn_toggle.setText("Start Measurement")
@@ -154,7 +159,7 @@ class MainApp(QMainWindow):
         """
         Runs in a separate thread to continuously read data from the sensor.
         Emits batches of IR data to update the plot.
-        Calculates BPM and status if measuring.
+        Calculates BPM and status only if finger is detected on sensor.
         """
         batch_size = 10  # Number of samples per batch update
         batch = []
@@ -173,26 +178,37 @@ class MainApp(QMainWindow):
                     timestamp = time.time()
                     readable_time = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
-                    # Maintain fixed size data for BPM calc
-                    self.ir_data.append(ir)
-                    if len(self.ir_data) > 300:
-                        self.ir_data = self.ir_data[-300:]
+                    # Check if finger is on sensor based on IR value threshold
+                    finger_on = ir > self.finger_on_threshold
 
-                    bpm = 0
-                    status = "No data"
+                    if finger_on:
+                        # Append IR data for BPM calc
+                        self.ir_data.append(ir)
+                        if len(self.ir_data) > 300:
+                            self.ir_data = self.ir_data[-300:]
 
-                    # Calculate BPM only if enough samples
-                    if len(self.ir_data) >= 200:
-                        bpm = self.calc_bpm(self.ir_data)
-                        status = self.classify_bpm(bpm)
-                        # Update labels in main thread (safe here because PyQt allows it)
-                        self.label_bpm.setText(f"BPM: {bpm:.1f}")
-                        self.label_status.setText(f"Status: {status}")
+                        bpm = 0
+                        status = "No data"
 
-                    # Append data for CSV export
-                    self.csv_data.append((timestamp, readable_time, ir, f"{bpm:.1f}", status))
+                        # Calculate BPM only if enough samples
+                        if len(self.ir_data) >= 200:
+                            bpm = self.calc_bpm(self.ir_data)
+                            status = self.classify_bpm(bpm)
+                            self.label_bpm.setText(f"BPM: {bpm:.1f}")
+                            self.label_status.setText(f"Status: {status}")
+                        else:
+                            self.label_bpm.setText("BPM: --")
+                            self.label_status.setText("Status: Calculating...")
 
-                # Sleep briefly to control read rate, reduce CPU usage
+                        # Append data for CSV export
+                        self.csv_data.append((timestamp, readable_time, ir, f"{bpm:.1f}", status))
+
+                    else:
+                        # Finger off: do not update BPM, show message
+                        self.label_bpm.setText("BPM: --")
+                        self.label_status.setText("Status: Finger off")
+                        # Do NOT append data or calculate BPM when finger is off
+
                 time.sleep(0.01)
             except Exception as e:
                 print(f"Error reading sensor: {e}")
