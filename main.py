@@ -139,7 +139,8 @@ class MainApp(QMainWindow):
                 std_ir = np.std(self.recent_ir_values)
 
                 # Dedo detectado si IR supera el promedio reciente en al menos 5%
-                finger_detected = ir > avg_ir * 1.05 and std_ir > 1000
+                #finger_detected = ir > avg_ir * 1.05 and std_ir > 1000
+                finger_detected = ir > 30000
 
                 # Acumular lote para graficar
                 batch.append(ir)
