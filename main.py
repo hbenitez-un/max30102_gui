@@ -234,6 +234,14 @@ class MainApp(QMainWindow):
         y = filtfilt(b, a, data)
         return y
 
+    def butter_bandpass_filter(self, data, lowcut=0.7, highcut=3.0, fs=100, order=2):
+        nyq = 0.5 * fs
+        low = lowcut / nyq
+        high = highcut / nyq
+        b, a = butter(order, [low, high], btype='band')
+        y = filtfilt(b, a, data)
+        return y
+
     def calc_bpm(self, ir_data, fs=100):
         """
         Calculate beats per minute (BPM) from IR data using peak detection.
@@ -241,7 +249,7 @@ class MainApp(QMainWindow):
         :param fs: sampling frequency in Hz (default 100 Hz)
         :return: calculated BPM as float
         """
-        filtered = self.butter_lowpass_filter(ir_data, cutoff=2.5, fs=fs, order=2)
+        '''filtered = self.butter_lowpass_filter(ir_data, cutoff=2.5, fs=fs, order=2)
         # Detect peaks that are at least 0.6 seconds apart
         peaks, _ = find_peaks(filtered, distance=fs * 0.6)
 
@@ -251,7 +259,18 @@ class MainApp(QMainWindow):
         # Calculate RR intervals in seconds between detected peaks
         rr_intervals = np.diff(peaks) / fs
         bpm = 60 / np.mean(rr_intervals)  # Convert average interval to BPM
+        return bpm'''
+        
+        filtered = self.butter_bandpass_filter(ir_data, lowcut=0.7, highcut=3.0, fs=fs, order=2)
+        peaks, _ = find_peaks(filtered, distance=fs * 0.6)
+        
+        if len(peaks) < 2:
+            return 0
+        
+        rr_intervals = np.diff(peaks) / fs
+        bpm = 60 / np.mean(rr_intervals)
         return bpm
+
 
     def classify_bpm(self, bpm):
         """
