@@ -333,7 +333,9 @@ class MainApp(QMainWindow):
         # esté por encima del umbral.
         if len(current_ir_data) < SAMPLE_FREQ: # Necesitamos al menos 1 segundo de datos
             status = "Recolectando datos..."
-        elif np.mean(current_ir_data[-SAMPLE_FREQ:]) < self.IR_THRESHOLD:
+        # --- CORRECCIÓN AQUÍ ---
+        elif np.mean(current_ir_data[-SAMPLE_FREQ:]) < IR_THRESHOLD: # Usa IR_THRESHOLD directamente
+        # --- FIN CORRECCIÓN ---
             status = "No hay dedo detectado"
             self.bpm_history.clear() # Limpiar historial si no hay dedo
         else:
@@ -367,7 +369,6 @@ class MainApp(QMainWindow):
             readable_time = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
             # Guarda el último valor IR leído para el CSV
             self.csv_data.append((timestamp, readable_time, self.ir_data[-1], f"{bpm:.1f}", status))
-
 
     def butter_lowpass_filter(self, data, cutoff=2.5, fs=SAMPLE_FREQ, order=2):
         """
