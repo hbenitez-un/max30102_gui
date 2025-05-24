@@ -2,7 +2,7 @@
 
 A Python-based graphical user interface (GUI) for real-time visualization and heart rate analysis using the **MAX30102 pulse oximeter sensor**. Designed for the **Raspberry Pi**.
 
-✅ Tested on Raspberry Pi 3B
+✅ Tested on Raspberry Pi 3B.
 
 ---
 
@@ -11,8 +11,8 @@ A Python-based graphical user interface (GUI) for real-time visualization and he
 * Live IR signal plotting
 * Real-time BPM calculation
 * Bradycardia & Tachycardia detection
-* Clean and responsive PyQt5 GUI
 * Modular and installable as a Python package
+* Data export: Allows saving measurement data to CSV files for further analysis.
 
 ---
 

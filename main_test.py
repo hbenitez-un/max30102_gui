@@ -13,484 +13,509 @@ import threading
 from datetime import datetime
 import os
 
-# Asegúrate de que esta importación sea correcta para tu configuración.
-# Si tu librería del sensor devuelve los datos como una tupla (rojo, IR),
-# este import debe ser de la clase MAX30102 que se comporta así.
-# Si devuelve un diccionario, el código se adaptará, pero la tupla es más común.
+# Ensures the correct import for the MAX30102 sensor class,
+# adapting to potential variations in its packaging or file location.
+# This section attempts to import the class based on common setups,
+# supporting data returned as a tuple (red, IR) or a dictionary.
 try:
-    # Si tu clase MAX30102 está dentro de un paquete 'sensor'
+    # Attempts import if MAX30102 class is within a 'sensor' package.
     from sensor.max30102 import MAX30102
 except ImportError:
-    # Si tu clase MAX30102 está en un archivo llamado max30102.py en el mismo nivel
-    # o si es directamente de una librería instalada como 'max30102_sensor'
+    # If the initial import fails, attempts direct import from a file
+    # named 'max30102.py' or from an installed library like 'max30102_sensor'.
     try:
-        from max30102 import MAX30102 # Intenta importar directamente el archivo
+        from max30102 import MAX30102
     except ImportError:
         try:
-            from max30102_sensor import MAX30102 # Intenta importar si es una librería
+            from max30102_sensor import MAX30102
         except ImportError:
-            print("Error: No se pudo importar la clase MAX30102.")
-            print("Asegúrate de que la librería del sensor esté instalada o que el archivo 'max30102.py' esté accesible.")
+            # If all import attempts fail, an error message is printed,
+            # and the application exits.
+            print("Error: The MAX30102 class could not be imported.")
+            print("Verify that the sensor library is installed or 'max30102.py' is accessible.")
             sys.exit(1)
 
 
-# --- Constantes de Configuración ---
-# Ajusta estas constantes según tu sensor y tus necesidades.
-# SAMPLE_FREQ: Frecuencia de muestreo real de tu sensor MAX30102.
-# Este valor es CRÍTICO para el cálculo de BPM. Consulta la documentación
-# de tu módulo o de la librería del sensor. Valores comunes son 25, 50, 100 Hz.
-SAMPLE_FREQ = 100 # Hz (ej. 100 Hz es común para el MAX30102)
+# --- Configuration Constants ---
+# These constants are configured to match the sensor's specifications
+# and the application's operational requirements.
+# SAMPLE_FREQ: Represents the actual sampling frequency of the MAX30102 sensor.
+# This value is critical for accurate BPM calculations and should align with
+# the sensor's documentation (common values include 25, 50, 100 Hz).
+SAMPLE_FREQ = 100 # Hz (e.g., 100 Hz is a common setting for the MAX30102)
 
-# BUFFER_SIZE_PLOT: Cuántas muestras se muestran en la gráfica en tiempo real.
-BUFFER_SIZE_PLOT = SAMPLE_FREQ * 5 # Mostrar 5 segundos de datos en la gráfica
+# BUFFER_SIZE_PLOT: Defines the number of samples displayed in the real-time graph.
+# This value determines the visual time window of the displayed data.
+BUFFER_SIZE_PLOT = SAMPLE_FREQ * 5 # Configured to display 5 seconds of data
 
-# BUFFER_SIZE_BPM: Cuántas muestras se usan para el cálculo de BPM.
-# Unos 4-6 segundos de datos son buenos para una medición estable.
-BUFFER_SIZE_BPM = SAMPLE_FREQ * 4 # Usar 4 segundos de datos para BPM
+# BUFFER_SIZE_BPM: Specifies the number of samples utilized for BPM calculation.
+# A duration of approximately 4-6 seconds of data is typically effective
+# for ensuring a stable heart rate measurement.
+BUFFER_SIZE_BPM = SAMPLE_FREQ * 4 # Uses 4 seconds of data for BPM calculation
 
-# IR_THRESHOLD: Umbral para detectar si hay un dedo.
-# Ajusta este valor probando tu sensor:
-# - Con el dedo puesto, el valor IR debe ser ALTO (ej. 50000 - 200000).
-# - Sin el dedo, el valor IR debe ser BAJO (ej. 0 - 5000).
-# El umbral debe estar entre estos dos rangos.
-IR_THRESHOLD = 15000 # Valor IR mínimo para considerar que hay un dedo
+# IR_THRESHOLD: Sets the minimum infrared (IR) value required to detect
+# the presence of a finger on the sensor. This threshold is typically
+# calibrated by observing IR values with and without a finger placed on the sensor.
+IR_THRESHOLD = 15000 # Minimum IR value to register a finger presence
 
 
 class DataEmitter(QObject):
     """
-    Subclase QObject usada para emitir lotes de datos IR nuevos vía una señal PyQt.
-    Esto permite que el hilo de lectura del sensor comunique datos al hilo de la GUI de forma segura.
+    This QObject subclass is designed to facilitate the safe emission
+    of new batches of IR data via PyQt signals. This mechanism ensures
+    that data can be communicated securely from the sensor reading thread
+    to the GUI thread, maintaining thread safety.
     """
-    new_data = pyqtSignal(list)  # Señal para enviar un lote (lista) de puntos de datos IR
-    new_bpm_status = pyqtSignal(float, str) # Señal para actualizar BPM y estado
+    new_data = pyqtSignal(list)  # Signal to transmit a list of IR data points for plotting.
+    new_bpm_status = pyqtSignal(float, str) # Signal to update the displayed BPM and status string.
 
 class PulsePlot(pg.PlotWidget):
     """
-    Widget de gráfica personalizado para mostrar datos del sensor IR en tiempo real.
-    Usa un buffer circular para mantener una cantidad fija de puntos de datos.
+    A custom plot widget implemented using pyqtgraph, specifically for
+    displaying real-time infrared (IR) sensor data. This widget utilizes
+    a circular buffer to efficiently manage and retain a fixed quantity
+    of incoming data points for continuous visualization.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.setBackground('w')  # Fondo blanco
-        self.setTitle("Monitor de Pulso MAX30102", color='k', size='16pt')
-        self.setLabel('left', "Valor IR", **{'color': 'black', 'font-size': '12pt'})
-        self.setLabel('bottom', "Muestra", **{'color': 'black', 'font-size': '12pt'})
-        self.showGrid(x=True, y=True)
+        self.setBackground('w')  # Sets the plot background to white.
+        self.setTitle("MAX30102 Pulse Monitor", color='k', size='16pt') # Configures plot title and style.
+        self.setLabel('left', "IR Value", **{'color': 'black', 'font-size': '12pt'}) # Sets the left axis label.
+        self.setLabel('bottom', "Sample", **{'color': 'black', 'font-size': '12pt'}) # Sets the bottom axis label.
+        self.showGrid(x=True, y=True) # Displays a grid on both axes.
 
-        # Curva principal para los datos IR crudos
-        self.curve = self.plot(pen=pg.mkPen(color='r', width=2), name="IR Crudo") 
-        # (Opcional) Curva para visualizar la señal filtrada (útil para depuración)
-        # self.curve_filtered = self.plot(pen=pg.mkPen(color='b', width=1), name="IR Filtrado") 
+        # Establishes the primary curve for displaying raw IR data.
+        self.curve = self.plot(pen=pg.mkPen(color='r', width=2), name="Raw IR") 
+        # An optional curve for visualizing filtered IR data, useful for debugging.
+        # self.curve_filtered = self.plot(pen=pg.mkPen(color='b', width=1), name="Filtered IR") 
 
-        self.buffer_size = BUFFER_SIZE_PLOT  # Número de muestras a mantener en el buffer para graficar
-        self.data = np.zeros(self.buffer_size, dtype=int)  # Buffer circular para valores IR
-        self.ptr = 0  # Índice actual en el buffer
+        self.buffer_size = BUFFER_SIZE_PLOT  # The number of samples maintained in the buffer for plotting.
+        self.data = np.zeros(self.buffer_size, dtype=int)  # Initializes a circular buffer for IR values.
+        self.ptr = 0  # The current index within the circular buffer.
 
     def update_plot(self, new_vals):
         """
-        Actualiza la gráfica con un nuevo lote de datos IR.
-        Mantiene un buffer circular de las últimas muestras.
+        Updates the plot with a new batch of IR data. This method efficiently
+        manages a circular buffer, ensuring that only the most recent samples
+        are retained and displayed, providing a continuous waveform visualization.
         """
         n = len(new_vals)
         if n == 0:
             return
 
-        # Si los nuevos datos son más grandes que el buffer, solo se toma la parte más reciente
+        # If the incoming data batch exceeds the buffer size, only the most
+        # recent portion of the data is retained for display.
         if n > self.buffer_size:
             new_vals = new_vals[-self.buffer_size:]
             n = self.buffer_size
 
         if self.ptr + n <= self.buffer_size:
-            # Si los nuevos datos caben sin envolver, insertar directamente
+            # If the new data fits within the current buffer segment without
+            # wrapping, it is inserted directly.
             self.data[self.ptr:self.ptr + n] = new_vals
         else:
-            # Dividir los datos para que se envuelvan alrededor del final del buffer
+            # If the new data extends beyond the end of the buffer, it is
+            # split and wrapped around, filling the remainder of the buffer
+            # and then starting from the beginning.
             till_end = self.buffer_size - self.ptr
             self.data[self.ptr:] = new_vals[:till_end]
             self.data[:n - till_end] = new_vals[till_end:]
-        self.ptr = (self.ptr + n) % self.buffer_size
+        self.ptr = (self.ptr + n) % self.buffer_size # Updates the buffer pointer.
 
-        # Reorganizar los datos para que la gráfica muestre una forma de onda continua
+        # Rearranges the data within the buffer to present a continuous waveform
+        # on the plot, regardless of the circular buffer's internal state.
         if self.ptr == 0:
             display_data = self.data
         else:
             display_data = np.concatenate((self.data[self.ptr:], self.data[:self.ptr]))
 
-        self.curve.setData(display_data)
+        self.curve.setData(display_data) # Updates the plot with the prepared data.
 
-        # (Opcional) Si descomentaste self.curve_filtered, aquí podrías actualizarlo.
-        # Esto requeriría una forma de pasar datos filtrados al plot.
+        # (Optional) If `self.curve_filtered` is uncommented, this section
+        # would update it, requiring filtered data to be passed to the plot.
         # self.curve_filtered.setData(display_filtered_data)
 
 
 class MainApp(QMainWindow):
     """
-    Ventana principal de la aplicación que contiene la gráfica de pulso, etiquetas y botones.
-    Maneja la lectura del sensor en un hilo separado y el cálculo de BPM.
+    The MainApp class represents the principal application window,
+    integrating the pulse graph, status labels, and control buttons.
+    It manages the reading of sensor data in a dedicated separate thread
+    and performs heart rate (BPM) calculations.
     """
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Monitor de Pulso MAX30102")
-        self.resize(700, 500)
+        self.setWindowTitle("MAX30102 Pulse Monitor") # Sets the window title.
+        self.resize(700, 500) # Sets the initial window size.
 
-        # Crear y añadir el widget de la gráfica de pulso
+        # Initializes and incorporates the custom pulse plot widget.
         self.plot = PulsePlot(self)
 
-        # Etiqueta para mostrar el BPM (pulsaciones por minuto)
+        # Configures the QLabel for displaying the calculated BPM.
         self.label_bpm = QLabel("BPM: 0", alignment=Qt.AlignCenter)
         self.label_bpm.setStyleSheet("font-size: 24pt; font-weight: bold; color: #333;")
 
-        # Etiqueta para mostrar el estado de la frecuencia cardíaca
-        self.label_status = QLabel("Estado: Iniciando sensor...", alignment=Qt.AlignCenter)
+        # Configures the QLabel for displaying the heart rate status.
+        self.label_status = QLabel("Status: Initializing sensor...", alignment=Qt.AlignCenter)
         self.label_status.setStyleSheet("font-size: 14pt; color: #666;")
 
-        # Botón para iniciar/detener la medición
-        self.btn_toggle = QPushButton("Iniciar Medición")
+        # Initializes the QPushButton for toggling measurement.
+        self.btn_toggle = QPushButton("Start Measurement")
         self.btn_toggle.setStyleSheet("padding: 10px; font-size: 12pt;")
-        self.btn_toggle.clicked.connect(self.toggle_measurement)
+        self.btn_toggle.clicked.connect(self.toggle_measurement) # Connects to the toggle method.
 
-        # Botón para exportar los datos recolectados a CSV
-        self.btn_export = QPushButton("Exportar CSV")
+        # Initializes the QPushButton for exporting data to CSV.
+        self.btn_export = QPushButton("Export CSV")
         self.btn_export.setStyleSheet("padding: 10px; font-size: 12pt;")
-        self.btn_export.clicked.connect(self.export_csv)
+        self.btn_export.clicked.connect(self.export_csv) # Connects to the export method.
 
-        # Layout para los botones uno al lado del otro
+        # Arranges the control buttons horizontally using QHBoxLayout.
         button_layout = QHBoxLayout()
         button_layout.addWidget(self.btn_toggle)
         button_layout.addWidget(self.btn_export)
 
-        # Layout vertical principal
+        # Establishes the main vertical layout for the application's widgets.
         layout = QVBoxLayout()
         layout.addWidget(self.plot)
         layout.addWidget(self.label_bpm)
         layout.addWidget(self.label_status)
         layout.addLayout(button_layout)
 
-        # Establecer el widget central con el layout
+        # Sets the central widget of the QMainWindow to the container
+        # holding the arranged layout.
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-        # Inicializar la instancia del sensor MAX30102
-        self.sensor = None # Inicializar a None
+        # Initializes the MAX30102 sensor instance. Error handling is included
+        # to manage potential initialization failures.
+        self.sensor = None # Sensor instance is initialized to None.
         try:
             self.sensor = MAX30102()
-            print("Sensor MAX30102 inicializado correctamente.")
-            self.label_status.setText("Estado: Esperando dedo...")
+            print("MAX30102 sensor successfully initialized.")
+            self.label_status.setText("Status: Waiting for finger...")
         except Exception as e:
-            print(f"Error al inicializar el sensor MAX30102: {e}")
-            self.label_status.setText("Error: Sensor no inicializado. Verifique conexiones y librerías.")
-            self.btn_toggle.setEnabled(False) # Deshabilitar botón si el sensor falla
+            print(f"Error encountered during MAX30102 sensor initialization: {e}")
+            self.label_status.setText("Error: Sensor not initialized. Verify connections and libraries.")
+            self.btn_toggle.setEnabled(False) # Disables the toggle button if sensor initialization fails.
 
-        # Lista para almacenar datos IR para el cálculo de BPM y exportación CSV
-        self.ir_data = []
-        # Lista para almacenar filas de datos para exportación CSV
-        self.csv_data = []
-        # Bandera que indica si la medición está activa
-        self.measuring = False
+        # Initializes lists for storing IR data for BPM calculation and CSV export.
+        self.ir_data = [] # Stores IR data for BPM calculation.
+        self.csv_data = [] # Stores data rows for CSV export.
+        self.measuring = False # Flag indicating the active state of measurement.
 
-        # Crear emisor de datos para emisión de señales segura entre hilos
+        # Creates a DataEmitter instance to facilitate thread-safe signal emission.
         self.data_emitter = DataEmitter()
-        # Conectar la señal de nuevos datos IR a la función de actualización de la gráfica
-        self.data_emitter.new_data.connect(self.plot.update_plot) # CORRECCIÓN: Conectar a self.plot.update_plot
-        # Conectar la señal de BPM y estado a la función de actualización de etiquetas
+        # Connects the `new_data` signal to the plot's update function.
+        self.data_emitter.new_data.connect(self.plot.update_plot)
+        # Connects the `new_bpm_status` signal to the label update function.
         self.data_emitter.new_bpm_status.connect(self.update_bpm_status_labels)
 
-        self.running = True  # Bandera para controlar el bucle del hilo del sensor
+        self.running = True  # Flag to control the sensor thread's operational loop.
         
-        # Iniciar el hilo de lectura del sensor solo si el sensor se inicializó correctamente
+        # Initiates the sensor reading thread only if the sensor
+        # was successfully initialized.
         if self.sensor:
             self.thread = threading.Thread(target=self.read_sensor)
-            self.thread.daemon = True # El hilo se detendrá cuando la aplicación principal se cierre
+            self.thread.daemon = True # Ensures the thread terminates with the main application.
             self.thread.start()
 
-        self.bpm_history = []  # Para suavizar el BPM
+        self.bpm_history = []  # Stores historical BPM values for smoothing.
         
-        # QTimer para actualizar el estado del BPM y la interfaz periódicamente
-        # Esto asegura que las actualizaciones de la GUI se hagan en el hilo principal
+        # Initializes a QTimer to periodically update the BPM status and GUI.
+        # This ensures that GUI updates are executed safely within the main thread.
         self.bpm_timer = QTimer(self)
-        self.bpm_timer.setInterval(500) # Actualizar cada 500 ms (0.5 segundos)
-        self.bpm_timer.timeout.connect(self.calculate_and_update_bpm)
-        self.bpm_timer.start()
+        self.bpm_timer.setInterval(500) # Configures the timer to update every 500 ms.
+        self.bpm_timer.timeout.connect(self.calculate_and_update_bpm) # Connects to the calculation method.
+        self.bpm_timer.start() # Starts the timer.
 
 
     def toggle_measurement(self):
         """
-        Inicia o detiene la medición del pulso.
-        Limpia los datos al iniciar; exporta CSV al detener.
+        Toggles the pulse measurement state between active and inactive.
+        Upon initiation, it clears previous data; upon cessation, it triggers
+        an automatic CSV export.
         """
-        if not self.sensor: # No permitir iniciar si el sensor no está inicializado
+        if not self.sensor: # Prevents measurement initiation if the sensor is not initialized.
             return
 
-        self.measuring = not self.measuring
+        self.measuring = not self.measuring # Inverts the measurement state.
         if self.measuring:
-            self.ir_data.clear()
-            self.csv_data.clear()
-            self.bpm_history.clear()
-            self.label_bpm.setText("BPM: 0")
-            self.label_status.setText("Estado: Midiendo...")
-            self.btn_toggle.setText("Detener Medición")
+            self.ir_data.clear() # Clears accumulated IR data.
+            self.csv_data.clear() # Clears data prepared for CSV export.
+            self.bpm_history.clear() # Clears BPM history for fresh smoothing.
+            self.label_bpm.setText("BPM: 0") # Resets BPM display.
+            self.label_status.setText("Status: Measuring...") # Updates status to "Measuring".
+            self.btn_toggle.setText("Stop Measurement") # Changes button text to "Stop Measurement".
         else:
-            self.btn_toggle.setText("Iniciar Medición")
-            self.export_csv(auto=True) # Exportar automáticamente al detener
-            self.label_status.setText("Estado: Medición detenida")
-            self.label_bpm.setText("BPM: 0")
+            self.btn_toggle.setText("Start Measurement") # Changes button text back to "Start Measurement".
+            self.export_csv(auto=True) # Automatically exports data to CSV upon stopping.
+            self.label_status.setText("Status: Measurement stopped") # Updates status to "Measurement stopped".
+            self.label_bpm.setText("BPM: 0") # Resets BPM display.
 
 
     def read_sensor(self):
         """
-        Lee datos del sensor MAX30102 en un hilo separado.
-        Emite lotes de datos para la gráfica y acumula datos para el cálculo de BPM.
+        Executes in a separate thread, continuously reading data from the MAX30102 sensor.
+        It emits batches of data for real-time plotting and accumulates data
+        for subsequent BPM calculations.
         """
-        batch_size = 10 # Número de muestras a enviar al plot en cada actualización
-        batch = []
+        batch_size = 10 # Number of samples to be sent to the plot in each update cycle.
+        batch = [] # Temporary list to accumulate samples before emission.
         
-        # Calcula el retraso necesario para aproximar la frecuencia de muestreo deseada
-        read_delay = 1.0 / SAMPLE_FREQ # ej. 1.0 / 100 Hz = 0.01 segundos
+        # Calculates the required delay to approximate the desired sampling frequency.
+        read_delay = 1.0 / SAMPLE_FREQ # E.g., 1.0 / 100 Hz results in a 0.01-second delay.
 
-        while self.running:
+        while self.running: # Loop continues as long as the 'running' flag is True.
             try:
-                # Asegúrate de que el método read_fifo() de tu clase MAX30102
-                # devuelve una tupla (red_value, ir_value) o un diccionario {'red': ..., 'ir': ...}.
-                # El código se adapta a ambos, pero el error anterior sugería una tupla.
+                # Attempts to read data from the sensor's FIFO buffer. The method
+                # `self.sensor.read_fifo()` is expected to return either a tuple
+                # (red_value, ir_value) or a dictionary {'red': ..., 'ir': ...}.
                 fifo_data = self.sensor.read_fifo()
                 
                 if fifo_data is None:
-                    # Si no hay datos (ej. FIFO vacío o error de lectura interna del sensor)
-                    time.sleep(read_delay / 2) # Esperar un poco antes de reintentar
-                    continue # Saltar al siguiente ciclo del bucle
+                    # If no data is returned (e.g., empty FIFO or internal sensor error),
+                    # the thread pauses briefly before attempting to read again.
+                    time.sleep(read_delay / 2)
+                    continue # Skips to the next iteration of the loop.
 
-                # --- Adaptación para el formato de datos de read_fifo() ---
+                # --- Adaptation for read_fifo() data format ---
                 ir = 0
                 if isinstance(fifo_data, tuple) and len(fifo_data) >= 2:
-                    # Asumiendo que el formato es (red_value, ir_value)
-                    ir = fifo_data[1] # El valor IR es el segundo elemento
+                    # Assumes the data format is (red_value, ir_value), extracting the IR component.
+                    ir = fifo_data[1]
                 elif isinstance(fifo_data, dict) and 'ir' in fifo_data:
-                    # Asumiendo que el formato es {'red': ..., 'ir': ...}
+                    # Assumes the data format is {'red': ..., 'ir': ...}, extracting the IR component.
                     ir = fifo_data['ir']
                 else:
-                    print(f"Advertencia: read_fifo() devolvió un formato inesperado: {type(fifo_data)} - {fifo_data}. Saltando ciclo.")
+                    # Logs a warning if an unexpected data format is received and skips the current cycle.
+                    print(f"Warning: read_fifo() returned an unexpected format: {type(fifo_data)} - {fifo_data}. Skipping cycle.")
                     time.sleep(read_delay / 2)
-                    continue # Saltar al siguiente ciclo del bucle
+                    continue
 
-                # Filtrar valores IR extremadamente bajos que pueden ser ruido
-                if ir < 100: # Un umbral bajo para ignorar lecturas de ruido cero
-                    ir = 0 # O puedes optar por simplemente 'continue' para no añadir estos datos
+                # Filters out extremely low IR values, which are typically indicative of noise.
+                if ir < 100:
+                    ir = 0 # Sets the value to 0 to ignore noise readings.
 
-                # Añadir al lote para el plot
-                batch.append(ir)
+                batch.append(ir) # Adds the processed IR value to the current batch.
 
                 if self.measuring:
-                    # Acumular datos para el cálculo de BPM y CSV
+                    # Accumulates IR data for BPM calculation and CSV export.
                     self.ir_data.append(ir)
-                    # Mantener el buffer de ir_data a un tamaño manejable para BPM
-                    if len(self.ir_data) > BUFFER_SIZE_BPM + SAMPLE_FREQ * 2: # Mantener un poco más del necesario
-                         self.ir_data = self.ir_data[-BUFFER_SIZE_BPM - SAMPLE_FREQ * 2:]
+                    # Maintains `ir_data` buffer at a manageable size for efficient BPM processing.
+                    if len(self.ir_data) > BUFFER_SIZE_BPM + SAMPLE_FREQ * 2:
+                           self.ir_data = self.ir_data[-BUFFER_SIZE_BPM - SAMPLE_FREQ * 2:]
 
-                # Emitir el lote para el plot cuando sea suficientemente grande
+                # Emits the collected batch of data to the plot when it reaches the specified size.
                 if len(batch) >= batch_size:
                     self.data_emitter.new_data.emit(batch)
-                    batch = [] # Limpiar el lote después de emitirlo
+                    batch = [] # Resets the batch after emission.
 
-                time.sleep(read_delay) # Controlar la frecuencia de lectura
+                time.sleep(read_delay) # Pauses to control the sensor reading frequency.
 
             except Exception as e:
-                print(f"Error en el hilo de lectura del sensor: {e}")
-                # Si el sensor se desconecta o falla, esto lo capturará
-                # Podrías actualizar el estado de la GUI con un error más específico aquí si lo deseas
-                self.label_status.setText("Error: Fallo de sensor. Reintentando...")
-                time.sleep(2) # Esperar un poco antes de reintentar para no saturar
+                # Catches any exceptions occurring during sensor reading, printing an error message.
+                # The GUI status is updated to reflect a sensor failure, and the thread pauses before retrying.
+                print(f"Error in sensor reading thread: {e}")
+                self.label_status.setText("Error: Sensor failure. Retrying...")
+                time.sleep(2)
 
 
     def update_bpm_status_labels(self, bpm, status):
         """
-        Slot para actualizar las etiquetas de BPM y estado en la GUI.
-        Llamado vía una señal del QTimer (que se ejecuta en el hilo principal).
+        This method serves as a slot for updating the BPM and status labels
+        on the GUI. It is invoked via a signal from the QTimer, ensuring that
+        all GUI updates occur safely within the main thread.
         """
-        self.label_bpm.setText(f"BPM: {bpm:.1f}")
-        self.label_status.setText(f"Estado: {status}")
+        self.label_bpm.setText(f"BPM: {bpm:.1f}") # Updates the BPM display, formatted to one decimal place.
+        self.label_status.setText(f"Status: {status}") # Updates the status message.
 
     def calculate_and_update_bpm(self):
         """
-        Calcula el BPM y actualiza las etiquetas de estado periódicamente.
-        Esto es llamado por un QTimer para asegurar que las actualizaciones de la GUI
-        ocurran en el hilo principal de forma segura.
+        Calculates the BPM and periodically updates the status labels.
+        This function is invoked by a QTimer to guarantee that all GUI updates
+        are executed safely on the main thread, preventing concurrency issues.
         """
         if not self.measuring:
-            # Si no estamos midiendo, no calculamos ni actualizamos
-            self.data_emitter.new_bpm_status.emit(0.0, "Medición detenida")
+            # If measurement is not active, BPM calculation and updates are skipped.
+            self.data_emitter.new_bpm_status.emit(0.0, "Measurement stopped")
             return
 
-        current_ir_data = np.array(self.ir_data, dtype=float) # Convertir a float para filtros
+        current_ir_data = np.array(self.ir_data, dtype=float) # Converts accumulated IR data to a float array for processing.
 
         bpm = 0.0
-        status = "Recolectando datos..."
+        status = "Collecting data..."
 
-        # 1. Comprobar la presencia del dedo
-        # Se verifica que haya suficientes datos y que el promedio de IR reciente
-        # esté por encima del umbral.
-        if len(current_ir_data) < SAMPLE_FREQ: # Necesitamos al menos 1 segundo de datos
-            status = "Recolectando datos..."
-        # --- CORRECCIÓN AQUÍ ---
-        elif np.mean(current_ir_data[-SAMPLE_FREQ:]) < IR_THRESHOLD: # Usa IR_THRESHOLD directamente
-        # --- FIN CORRECCIÓN ---
-            status = "No hay dedo detectado"
-            self.bpm_history.clear() # Limpiar historial si no hay dedo
+        # 1. Checks for finger presence by evaluating recent IR data.
+        # It verifies if a sufficient amount of data has been collected and
+        # if the average of recent IR readings exceeds the defined threshold.
+        if len(current_ir_data) < SAMPLE_FREQ: # Requires at least 1 second of data for initial checks.
+            status = "Collecting data..."
+        elif np.mean(current_ir_data[-SAMPLE_FREQ:]) < IR_THRESHOLD: # Compares recent IR average to the threshold.
+            status = "No finger detected"
+            self.bpm_history.clear() # Clears BPM history if no finger is detected.
         else:
-            # 2. Calcular BPM si hay suficientes datos y se detecta un dedo
+            # 2. Calculates BPM if sufficient data is available and a finger is detected.
             if len(current_ir_data) >= BUFFER_SIZE_BPM:
-                # Se toma un segmento de datos para el cálculo (los más recientes)
+                # Processes a segment of the most recent data for BPM calculation.
                 segment_to_process = current_ir_data[-BUFFER_SIZE_BPM:]
                 
-                bpm = self.calc_bpm(segment_to_process)
+                bpm = self.calc_bpm(segment_to_process) # Calls the method to calculate BPM.
                 
-                # 3. Suavizar BPM si es válido y clasificar el estado
-                if 40 <= bpm <= 180: # Solo suavizar y clasificar BPMs razonables
-                    self.bpm_history.append(bpm)
-                    if len(self.bpm_history) > 10: # Mantener los últimos 10 valores para suavizado
+                # 3. Smooths the calculated BPM if it falls within a reasonable range (40-180 BPM)
+                # and classifies the heart rate status.
+                if 40 <= bpm <= 180:
+                    self.bpm_history.append(bpm) # Adds the current BPM to history.
+                    if len(self.bpm_history) > 10: # Keeps only the last 10 values for smoothing.
                         self.bpm_history.pop(0)
-                    bpm = sum(self.bpm_history) / len(self.bpm_history)
-                    status = self.classify_bpm(bpm)
+                    bpm = sum(self.bpm_history) / len(self.bpm_history) # Calculates the smoothed BPM.
+                    status = self.classify_bpm(bpm) # Classifies the smoothed BPM.
                 else:
-                    self.bpm_history.clear() # Si el BPM calculado es inválido, reiniciar historial
-                    status = "Analizando señal..." # O "BPM fuera de rango"
-                    bpm = 0.0 # Restablecer BPM a 0 si es inválido
+                    self.bpm_history.clear() # Resets BPM history if the calculated BPM is invalid.
+                    status = "Analyzing signal..." # Updates status, e.g., "BPM out of range."
+                    bpm = 0.0 # Resets BPM to 0 if invalid.
             else:
-                status = "Recolectando datos..."
+                status = "Collecting data..." # Continues to collect data if buffer is insufficient.
 
-        # Emitir la señal para actualizar las etiquetas de la GUI (seguro por QTimer)
+        # Emits the signal to update the GUI labels, ensuring thread-safe operation via QTimer.
         self.data_emitter.new_bpm_status.emit(bpm, status)
 
-        # 4. Guardar en CSV solo si hay datos válidos y se está midiendo
+        # 4. Stores data in CSV format only when measurement is active and valid data exists.
         if self.measuring and len(self.ir_data) > 0:
-            timestamp = time.time()
-            readable_time = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
-            # Guarda el último valor IR leído para el CSV
-            self.csv_data.append((timestamp, readable_time, self.ir_data[-1], f"{bpm:.1f}", status))
+            timestamp = time.time() # Records the current Unix timestamp.
+            readable_time = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') # Formats timestamp to readable string.
+            self.csv_data.append((timestamp, readable_time, self.ir_data[-1], f"{bpm:.1f}", status)) # Appends data for CSV export.
 
     def butter_lowpass_filter(self, data, cutoff=2.5, fs=SAMPLE_FREQ, order=2):
         """
-        Aplica un filtro Butterworth de paso bajo a los datos IR.
-        Útil para suavizar la señal y eliminar ruido de alta frecuencia.
+        Applies a Butterworth low-pass filter to the provided IR data.
+        This filtering operation is beneficial for smoothing the signal
+        and mitigating high-frequency noise.
         """
-        nyq = 0.5 * fs  # Frecuencia de Nyquist
-        normal_cutoff = cutoff / nyq
-        b, a = butter(order, normal_cutoff, btype='low', analog=False)
-        y = filtfilt(b, a, data)
+        nyq = 0.5 * fs  # Calculates the Nyquist frequency.
+        normal_cutoff = cutoff / nyq # Normalizes the cutoff frequency.
+        b, a = butter(order, normal_cutoff, btype='low', analog=False) # Designs the filter.
+        y = filtfilt(b, a, data) # Applies the filter to the data.
         return y
 
     def butter_bandpass_filter(self, data, lowcut=0.7, highcut=3.0, fs=SAMPLE_FREQ, order=4):
         """
-        Aplica un filtro Butterworth de paso banda a los datos IR.
-        Esencial para aislar la frecuencia del pulso (0.7 Hz a 3.0 Hz).
+        Applies a Butterworth band-pass filter to the IR data.
+        This is a critical step for isolating the pulse frequency,
+        typically ranging from 0.7 Hz to 3.0 Hz, which corresponds to
+        human heart rates.
         """
-        nyq = 0.5 * fs
-        low = lowcut / nyq
-        high = highcut / nyq
-        b, a = butter(order, [low, high], btype='band')
-        y = filtfilt(b, a, data)
+        nyq = 0.5 * fs # Calculates the Nyquist frequency.
+        low = lowcut / nyq # Normalizes the lower cutoff frequency.
+        high = highcut / nyq # Normalizes the higher cutoff frequency.
+        b, a = butter(order, [low, high], btype='band') # Designs the band-pass filter.
+        y = filtfilt(b, a, data) # Applies the filter to the data.
         return y
 
     
     def classify_bpm(self, bpm):
         """
-        Clasifica el estado de la frecuencia cardíaca basado en el valor de BPM.
+        Classifies the heart rate status based on the provided BPM value.
+        Categories include "No reading," "Bradycardia," "Tachycardia," and "Normal,"
+        based on standard heart rate ranges.
         """
         if bpm == 0:
-            return "No hay lectura"
+            return "No reading"
         elif bpm < 60:
-            return "Bradicardia"
+            return "Bradycardia"
         elif bpm > 90:
-            return "Taquicardia"
+            return "Tachycardia"
         else:
             return "Normal"
 
     def export_csv(self, auto=False):
         """
-        Exporta los datos de medición recolectados a un archivo CSV.
-        Si auto=True, guarda en una carpeta predeterminada con nombre de archivo con marca de tiempo.
-        De lo contrario, abre un diálogo de guardado.
+        Exports the collected measurement data to a CSV file.
+        If `auto` is True, the file is saved automatically in a
+        predetermined folder with a timestamped filename.
+        Otherwise, a file dialog is presented to the user for selection.
         """
         if not self.csv_data:
-            print("No hay datos para exportar.")
+            print("No data available for export.")
             return
 
         if auto:
+            # Defines a default export folder within the user's home directory.
             folder = os.path.expanduser('~/max30102_exports')
-            os.makedirs(folder, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            file_name = os.path.join(folder, f"max30102_data_{timestamp}.csv")
+            os.makedirs(folder, exist_ok=True) # Creates the directory if it does not exist.
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") # Generates a timestamp for the filename.
+            file_name = os.path.join(folder, f"max30102_data_{timestamp}.csv") # Constructs the full file path.
         else:
-            file_name, _ = QFileDialog.getSaveFileName(self, "Guardar CSV", "", "Archivos CSV (*.csv)")
+            # Opens a file dialog for the user to select the save location and filename.
+            file_name, _ = QFileDialog.getSaveFileName(self, "Save CSV", "", "CSV Files (*.csv)")
             if not file_name:
-                return
+                return # Exits if no file name is selected.
 
         try:
             with open(file_name, 'w', newline='') as file:
                 writer = csv.writer(file)
-                writer.writerow(['Timestamp Unix', 'Tiempo Legible', 'Valor IR', 'BPM', 'Estado'])
-                writer.writerows(self.csv_data)
-            print(f"Datos exportados a: {file_name}")
+                writer.writerow(['Unix Timestamp', 'Readable Time', 'IR Value', 'BPM', 'Status']) # Writes the CSV header.
+                writer.writerows(self.csv_data) # Writes all collected data rows.
+            print(f"Data successfully exported to: {file_name}")
         except Exception as e:
-            print(f"Error al exportar CSV: {e}")
+            print(f"Error encountered during CSV export: {e}")
 
     def calc_bpm(self, ir_data_segment):
         """
-        Calcula el BPM a partir de un segmento de datos IR usando detección de picos.
-        Aplica filtros para una mejor detección de picos.
+        Calculates the Beats Per Minute (BPM) from a given segment of IR data
+        using peak detection algorithms. The process involves applying filters
+        to enhance the accuracy of peak identification.
         """
-        if len(ir_data_segment) < SAMPLE_FREQ * 2: # Necesitamos al menos 2 segundos de datos para el cálculo
+        if len(ir_data_segment) < SAMPLE_FREQ * 2: # Requires at least 2 seconds of data for calculation.
             return 0.0
 
-        # Aplica filtro de paso banda. Este es crucial para aislar la señal del pulso.
+        # Applies a band-pass filter to the data, which is essential for isolating
+        # the pulse signal's frequency components.
         filtered_data = self.butter_bandpass_filter(
             ir_data_segment, lowcut=0.7, highcut=3.0, fs=SAMPLE_FREQ, order=4
         )
         
-        # Determinar si necesitas invertir la señal.
-        # Si la gráfica de IR crudo BAJA durante un pulso, descomenta la primera línea.
-        # Si la gráfica de IR crudo SUBE durante un pulso, usa la segunda línea.
-        # Observa el comportamiento de tu gráfica para decidir.
-        # data_to_process = -filtered_data # Invertir para detectar valles como picos
-        data_to_process = filtered_data   # No invertir, detectar picos directos
+        # Determines whether the signal needs to be inverted for peak detection.
+        # This decision is based on the observed behavior of the raw IR graph
+        # during a pulse (whether it goes down or up).
+        # data_to_process = -filtered_data # Option to invert the signal to detect valleys as peaks.
+        data_to_process = filtered_data   # Option to use the signal directly, detecting peaks as maxima.
 
-        # Asegúrate de que la señal tiene suficiente varianza para detectar picos
-        if np.std(data_to_process) < 50: # Umbral de desviación estándar para ruido
-            # print("Advertencia: Señal demasiado plana, posible ruido.")
+        # Ensures the signal exhibits sufficient variance to enable reliable peak detection.
+        if np.std(data_to_process) < 50: # A standard deviation threshold to identify flat or noisy signals.
+            # print("Warning: Signal is too flat, potentially indicating noise.")
             return 0.0
 
-        # --- Detección de picos con scipy.signal.find_peaks ---
-        # distance: Distancia mínima entre picos (en número de muestras).
-        #           Ajusta según tu SAMPLE_FREQ y el rango de BPM esperado.
-        #           Un BPM de 200 (máximo esperado) son 3 latidos por segundo.
-        #           Para 100Hz, 100/3 = ~33 muestras. Usamos 0.35s para ser seguros (35 muestras).
-        # prominence: Importancia del pico respecto a sus vecinos. Crucial para eliminar ruido.
-        #             Ajusta basándose en la amplitud de tu señal filtrada.
-        
-        # Los parámetros de `prominence` pueden variar mucho. `np.std(data_to_process) * X`
-        # es un buen punto de partida. Si tienes muchos picos falsos, aumenta X.
-        # Si no detecta picos reales, disminuye X.
+        # --- Peak detection using scipy.signal.find_peaks ---
+        # `distance`: Specifies the minimum horizontal distance (in samples) between detected peaks.
+        #             This parameter is adjusted based on `SAMPLE_FREQ` and the expected BPM range.
+        #             For example, a max BPM of 200 (3 beats/sec) implies a minimum distance.
+        # `prominence`: Defines the prominence of detected peaks, a crucial factor in
+        #               distinguishing true pulse peaks from noise. This is often
+        #               calibrated relative to the signal's standard deviation.
         peaks, properties = find_peaks(
             data_to_process, 
-            distance=int(SAMPLE_FREQ * 0.35), # Mínimo 0.35 segundos entre picos (aprox. 171 BPM máx)
-            prominence=np.std(data_to_process) * 0.4 # Ajustar este factor (0.4 es un buen valor inicial)
+            distance=int(SAMPLE_FREQ * 0.35), # Minimum 0.35 seconds between peaks (approx. 171 BPM max).
+            prominence=np.std(data_to_process) * 0.4 # Adjustable factor for prominence (0.4 is a common starting point).
         )
 
-        # print(f"Picos encontrados: {len(peaks)}, Índices de picos: {peaks}")
-        # print(f"Prominencias: {properties.get('prominences', 'N/A')}")
+        # Print statements for debugging peak detection, if uncommented.
+        # print(f"Peaks found: {len(peaks)}, Peak indices: {peaks}")
+        # print(f"Prominences: {properties.get('prominences', 'N/A')}")
 
         if len(peaks) < 2:
-            return 0.0 # Necesitamos al menos dos picos para calcular un intervalo
+            return 0.0 # Requires at least two peaks to compute an interval.
 
-        # Calcular los intervalos entre picos y luego el BPM promedio
-        peak_intervals_samples = np.diff(peaks) # Diferencias entre los índices de los picos (en muestras)
+        # Computes the intervals between detected peaks and subsequently calculates
+        # the average BPM.
+        peak_intervals_samples = np.diff(peaks) # Differences between peak indices, in samples.
         
-        # Eliminar intervalos muy cortos o muy largos que puedan ser ruido o artefactos
-        # (ej. < 40 BPM o > 180 BPM)
-        min_interval_samples = SAMPLE_FREQ * (60 / 180) # Para 180 BPM
-        max_interval_samples = SAMPLE_FREQ * (60 / 40) # Para 40 BPM
+        # Filters out excessively short or long intervals, which may represent
+        # noise or measurement artifacts (e.g., outside 40-180 BPM).
+        min_interval_samples = SAMPLE_FREQ * (60 / 180) # Corresponds to 180 BPM.
+        max_interval_samples = SAMPLE_FREQ * (60 / 40) # Corresponds to 40 BPM.
 
         valid_intervals = peak_intervals_samples[
             (peak_intervals_samples >= min_interval_samples) & 
@@ -498,20 +523,22 @@ class MainApp(QMainWindow):
         ]
 
         if len(valid_intervals) < 1:
-            return 0.0 # No hay intervalos válidos
+            return 0.0 # Returns 0.0 if no valid intervals are found.
 
-        avg_interval_samples = np.mean(valid_intervals)
+        avg_interval_samples = np.mean(valid_intervals) # Calculates the average of valid intervals.
 
-        # BPM = (muestras por minuto) / (muestras por latido)
-        # BPM = (SAMPLE_FREQ * 60) / avg_interval_samples
+        # Calculates BPM based on the average interval.
+        # BPM = (samples per minute) / (samples per beat).
         bpm = (SAMPLE_FREQ * 60) / avg_interval_samples
         
-        # print(f"Intervalos de picos (muestras): {peak_intervals_samples}")
-        # print(f"Intervalo promedio (muestras): {avg_interval_samples}")
-        # print(f"BPM calculado (bruto): {bpm}")
+        # Print statements for debugging BPM calculation, if uncommented.
+        # print(f"Peak intervals (samples): {peak_intervals_samples}")
+        # print(f"Average interval (samples): {avg_interval_samples}")
+        # print(f"Calculated BPM (raw): {bpm}")
 
-        # Añadir un umbral de BPM razonable para evitar valores erróneos extremos
-        if 40 <= bpm <= 180: # Rango de BPM esperado para humanos
+        # Applies a reasonable BPM threshold (40-180 BPM) to filter out
+        # extreme or erroneous values.
+        if 40 <= bpm <= 180:
             return bpm
         else:
             return 0.0
@@ -519,30 +546,32 @@ class MainApp(QMainWindow):
 
     def closeEvent(self, event):
         """
-        Maneja el evento de cierre de la aplicación.
-        Apaga correctamente el sensor y el hilo de lectura.
+        Manages the application's closure event, ensuring a proper shutdown
+        of the sensor and the sensor reading thread.
         """
-        print("Cerrando aplicación...")
-        self.running = False  # Establecer bandera para detener el bucle del hilo
+        print("Application is shutting down...")
+        self.running = False  # Sets the flag to terminate the sensor thread's loop.
         if self.thread.is_alive():
-            print("Esperando a que el hilo del sensor termine...")
-            self.thread.join(timeout=2) # Dar al hilo una oportunidad para terminar limpiamente
+            print("Awaiting sensor thread termination...")
+            self.thread.join(timeout=2) # Allows the thread a brief period to terminate cleanly.
 
         if self.sensor:
-            self.sensor.shutdown() # Asegúrate de que tu clase MAX30102 tenga este método
-            print("Sensor MAX30102 apagado.")
-        event.accept()
+            self.sensor.shutdown() # Ensures the MAX30102 sensor is powered down.
+            print("MAX30102 sensor has been shut down.")
+        event.accept() # Accepts the close event, allowing the application to close.
 
 
 def main():
     """
-    Función principal para crear y ejecutar la aplicación.
+    The main function responsible for initializing and executing the application.
+    It creates the QApplication instance, instantiates the MainApp window,
+    displays it, and initiates the PyQt event loop.
     """
-    app = QApplication(sys.argv)
-    window = MainApp()
-    window.show()
-    sys.exit(app.exec_())
+    app = QApplication(sys.argv) # Initializes the PyQt application.
+    window = MainApp() # Creates an instance of the MainApp window.
+    window.show() # Displays the main application window.
+    sys.exit(app.exec_()) # Enters the PyQt main loop, handling events.
 
 
 if __name__ == "__main__":
-    main()
+    main() # Executes the main function when the script is run directly.
