@@ -206,53 +206,44 @@ class MainApp(QMainWindow):
 
 
     def read_sensor(self):
-        """
-        Reads data from the MAX30102 sensor in a separate thread.
-        Emits data batches for plotting and accumulates data for BPM calculation.
-        """
-        batch_size = 10 # Número de muestras a enviar al plot en cada actualización
+        batch_size = 10
         batch = []
-        
-        # Ajustar el delay basado en la frecuencia de muestreo si el sensor lo requiere
-        # Si el sensor ya tiene su propio FIFO buffer y lee a una tasa fija, este sleep es para no saturar
-        # Si no, ajusta SAMPLE_FREQ y el sleep para obtener la tasa deseada
-        read_delay = 1.0 / SAMPLE_FREQ # Intentar leer a la frecuencia de muestreo deseada
+        read_delay = 1.0 / SAMPLE_FREQ # Controlar la frecuencia de lectura
 
         while self.running:
             try:
-                # Intenta leer una muestra del sensor
-                # Asegúrate de que tu método read_fifo() devuelva un diccionario con 'red' e 'ir'
-                # o ajusta según la implementación real de tu biblioteca del sensor.
                 fifo_data = self.sensor.read_fifo()
                 
-                if fifo_data: # Asegúrate de que se leyeron datos válidos
-                    # red = fifo_data['red'] # El código no usa el valor RED actualmente
-                    ir = fifo_data['ir']
+                # *** INICIO DE LA CORRECCIÓN ***
+                # Comprobar si se recibieron datos y si tienen el formato esperado (ej. tupla con IR en el segundo elemento)
+                # Si tu sensor devuelve una tupla (red, ir), accede así:
+                if isinstance(fifo_data, (list, tuple)) and len(fifo_data) >= 2:
+                    # red = fifo_data[0] # Si necesitas el valor rojo
+                    ir = fifo_data[1]  # Acceder al valor IR por índice (segundo elemento de la tupla)
+                else:
+                    # Manejar casos donde fifo_data no es una tupla o no tiene suficientes elementos
+                    print(f"Advertencia: Dato del sensor no válido o incompleto: {fifo_data}")
+                    time.sleep(read_delay) # Esperar antes de reintentar
+                    continue # Saltar el resto de la iteración y volver a intentar leer
+                # *** FIN DE LA CORRECCIÓN ***
 
-                    # Añadir al lote para el plot
-                    batch.append(ir)
+                batch.append(ir)
 
-                    if self.measuring:
-                        # Acumular datos para el cálculo de BPM y CSV
-                        self.ir_data.append(ir)
-                        # Mantener el buffer de ir_data a un tamaño manejable para BPM
-                        if len(self.ir_data) > BUFFER_SIZE_BPM + 50: # Mantener un poco más del necesario
-                             self.ir_data = self.ir_data[-BUFFER_SIZE_BPM - 50:]
+                if len(batch) >= batch_size:
+                    self.data_emitter.new_data.emit(batch)
+                    batch = [] # Limpiar el lote después de emitirlo
 
+                if self.measuring:
+                    # La acumulación de ir_data y el cálculo de BPM se manejan ahora por el QTimer
+                    # Asegúrate de que calculate_and_update_bpm se llame periódicamente
+                    pass # Ya no se hace aquí directamente
 
-                    # Emitir el lote para el plot cuando sea suficientemente grande
-                    if len(batch) >= batch_size:
-                        self.data_emitter.new_data.emit(batch)
-                        batch = [] # Limpiar el lote después de emitirlo
-
-                time.sleep(read_delay) # Controlar la frecuencia de lectura
+                time.sleep(read_delay)
 
             except Exception as e:
                 print(f"Error en el hilo de lectura del sensor: {e}")
-                # Podrías añadir un mensaje de error en la GUI si es crítico
                 self.label_status.setText("Error: Fallo de sensor.")
-                time.sleep(2) # Esperar un poco antes de reintentar para no saturar
-
+                time.sleep(2)
 
     def update_bpm_status_labels(self, bpm, status):
         """
