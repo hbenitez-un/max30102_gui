@@ -14,7 +14,7 @@ from datetime import datetime
 import os
 from sensor.max30102 import MAX30102
 
-IR_THRESHOLD = 30000
+#IR_THRESHOLD = 30000
 
 class DataEmitter(QObject):
     new_data = pyqtSignal(list)
@@ -125,16 +125,23 @@ class MainApp(QMainWindow):
             try:
                 red, ir = self.sensor.read_fifo()
 
-                if ir < 5000 or ir > 150000:
+                # Descartar valores extremos (ruido)
+                if ir < 5000 or ir > 200000:
                     continue
 
+                # Actualizar histórico de IR para detección de dedo
                 self.recent_ir_values.append(ir)
                 if len(self.recent_ir_values) > 50:
                     self.recent_ir_values.pop(0)
 
+                # Promedio móvil de los últimos IR para detectar dedo
                 avg_ir = np.mean(self.recent_ir_values)
-                finger_detected = ir > avg_ir * 1.05
+                std_ir = np.std(self.recent_ir_values)
 
+                # Dedo detectado si IR supera el promedio reciente en al menos 5%
+                finger_detected = ir > avg_ir * 1.05 and std_ir > 1000
+
+                # Acumular lote para graficar
                 batch.append(ir)
                 if len(batch) >= batch_size:
                     self.data_emitter.new_data.emit(batch)
@@ -174,6 +181,7 @@ class MainApp(QMainWindow):
             except Exception as e:
                 print(f"Error reading sensor: {e}")
                 time.sleep(1)
+
 
     def update_plot(self, new_vals):
         self.plot.update_plot(new_vals)
