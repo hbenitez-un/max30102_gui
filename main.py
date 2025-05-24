@@ -118,7 +118,7 @@ class MainApp(QMainWindow):
             self.export_csv(auto=True)
 
     def read_sensor(self):
-        batch_size = 10
+        batch_size = 20
         batch = []
 
         while True:
@@ -192,7 +192,7 @@ class MainApp(QMainWindow):
             return np.array(data)
         return np.convolve(data, np.ones(window_size) / window_size, mode='valid')
 
-    def butter_lowpass_filter(self, data, cutoff=2.5, fs=100, order=2):
+    def butter_lowpass_filter(self, data, cutoff=4, fs=100, order=2):
         nyq = 0.5 * fs
         normal_cutoff = cutoff / nyq
         b, a = butter(order, normal_cutoff, btype='low', analog=False)
@@ -202,7 +202,8 @@ class MainApp(QMainWindow):
     def calc_bpm(self, ir_data, fs=100):
         smoothed = self.moving_average(ir_data, window_size=5)
         filtered = self.butter_lowpass_filter(smoothed, cutoff=2.5, fs=fs, order=2)
-        peaks, _ = find_peaks(filtered, distance=fs * 0.7, prominence=0.2 * np.max(filtered))
+        peaks, _ = find_peaks(filtered, distance=fs * 0.6, prominence=0.1 * np.max(filtered))
+
         if len(peaks) < 2:
             return 0
         rr_intervals = np.diff(peaks) / fs
