@@ -18,7 +18,7 @@ A Python-based graphical user interface (GUI) for real-time visualization and he
 
 ## 📷 Screenshot
 
-![alt text](media\image.png)
+![GUI](.\media\image.png)
 
 ---
 
