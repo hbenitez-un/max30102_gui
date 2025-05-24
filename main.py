@@ -77,6 +77,7 @@ class MainApp(QMainWindow):
     Main application window that contains the pulse plot, labels, and buttons.
     Handles sensor reading in a separate thread and BPM calculation.
     """
+    IR_THRESHOLD = 50000  # Threshold for IR value to detect finger presence
     def __init__(self):
         super().__init__()
         self.setWindowTitle("MAX30102 Pulse Monitor")
@@ -156,54 +157,51 @@ class MainApp(QMainWindow):
             self.export_csv(auto=True)
 
     def read_sensor(self):
-        """
-        Background thread function to continuously read from the MAX30102 sensor,
-        emit data batches for plotting, calculate BPM if measuring, and store data.
-        """
-        batch_size = 10
-        batch = []
+            batch_size = 10
+            batch = []
 
-        while True:
-            try:
-                # Read red and IR values from sensor FIFO
-                red, ir = self.sensor.read_fifo()
-                batch.append(ir)
+            while True:
+                try:
+                    red, ir = self.sensor.read_fifo()
+                    batch.append(ir)
 
-                # Emit batch for plotting when enough samples collected
-                if len(batch) >= batch_size:
-                    self.data_emitter.new_data.emit(batch)
-                    batch.clear()
+                    if len(batch) >= batch_size:
+                        self.data_emitter.new_data.emit(batch)
+                        batch.clear()
 
-                if self.measuring:
-                    # Timestamp for data row
-                    timestamp = time.time()
-                    readable_time = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+                    if self.measuring:
+                        timestamp = time.time()
+                        readable_time = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # Append IR data for BPM calculation, keep last 300 samples
+                        self.ir_data.append(ir)
+                        
+                        if len(self.ir_data) > 300:
+                            self.ir_data = self.ir_data[-300:]
 
-                    # Append IR data for BPM calculation, keep last 300 samples
-                    self.ir_data.append(ir)
-                    if len(self.ir_data) > 300:
-                        self.ir_data = self.ir_data[-300:]
+                        bpm = 0
+                        status = "No data"
 
-                    bpm = 0
-                    status = "No data"
-
-                    # Calculate BPM if enough data is collected
-                    if len(self.ir_data) >= 200:
-                        bpm = self.calc_bpm(self.ir_data)
-                        status = self.classify_bpm(bpm)
-
+                        # Check if finger is detected based on IR threshold
+                        if max(self.ir_data[-batch_size:]) < self.IR_THRESHOLD:
+                            status = "No finger detected"
+                            bpm = 0
+                        elif len(self.ir_data) >= 200:  # Calculate BPM if enough data is collected
+                            bpm = self.calc_bpm(self.ir_data)
+                            status = self.classify_bpm(bpm)
+                        
                         # Update GUI labels with BPM and status
                         self.label_bpm.setText(f"BPM: {bpm:.1f}")
                         self.label_status.setText(f"Status: {status}")
 
-                    # Store data for CSV export
-                    self.csv_data.append((timestamp, readable_time, ir, f"{bpm:.1f}", status))
+                        self.csv_data.append((timestamp, readable_time, ir, f"{bpm:.1f}", status))
+                    
+                    # Short delay to limit read frequency
+                    time.sleep(0.01)
 
-                time.sleep(0.01)  # Short delay to limit read frequency
-
-            except Exception as e:
-                print(f"Error reading sensor: {e}")
-                time.sleep(1)
+                except Exception as e:
+                    print(f"Error reading sensor: {e}")
+                    time.sleep(1)
 
     def update_plot(self, new_vals):
         """
@@ -253,7 +251,7 @@ class MainApp(QMainWindow):
         """
         if bpm < 60:
             return "Bradycardia"
-        elif bpm > 100:
+        elif bpm > 90:
             return "Tachycardia"
         else:
             return "Normal"
