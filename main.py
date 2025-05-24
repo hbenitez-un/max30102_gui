@@ -14,6 +14,7 @@ from datetime import datetime
 import os
 from sensor.max30102 import MAX30102
 
+IR_THRESHOLD = 30000  # Adjust based on your sensor readings
 
 class DataEmitter(QObject):
     """
@@ -178,11 +179,8 @@ class MainApp(QMainWindow):
                     timestamp = time.time()
                     readable_time = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
-                    # Check if finger is on sensor based on IR value threshold
-                    finger_on = ir > self.finger_on_threshold
-
-                    if finger_on:
-                        # Append IR data for BPM calc
+                    # Finger detection: only proceed if IR is above threshold
+                    if ir > IR_THRESHOLD:
                         self.ir_data.append(ir)
                         if len(self.ir_data) > 300:
                             self.ir_data = self.ir_data[-300:]
@@ -190,24 +188,26 @@ class MainApp(QMainWindow):
                         bpm = 0
                         status = "No data"
 
-                        # Calculate BPM only if enough samples
                         if len(self.ir_data) >= 200:
                             bpm = self.calc_bpm(self.ir_data)
                             status = self.classify_bpm(bpm)
                             self.label_bpm.setText(f"BPM: {bpm:.1f}")
                             self.label_status.setText(f"Status: {status}")
-                        else:
-                            self.label_bpm.setText("BPM: --")
-                            self.label_status.setText("Status: Calculating...")
-
-                        # Append data for CSV export
-                        self.csv_data.append((timestamp, readable_time, ir, f"{bpm:.1f}", status))
-
                     else:
-                        # Finger off: do not update BPM, show message
+                        # Finger not detected, clear data and update labels
+                        self.ir_data.clear()
+                        bpm = 0
+                        status = "Waiting for finger..."
                         self.label_bpm.setText("BPM: --")
-                        self.label_status.setText("Status: Finger off")
-                        # Do NOT append data or calculate BPM when finger is off
+                        self.label_status.setText(f"Status: {status}")
+
+                    self.csv_data.append((timestamp, readable_time, ir, f"{bpm:.1f}", status))
+
+                else:
+                    # Finger off: do not update BPM, show message
+                    self.label_bpm.setText("BPM: --")
+                    self.label_status.setText("Status: Finger off")
+                    # Do NOT append data or calculate BPM when finger is off
 
                 time.sleep(0.01)
             except Exception as e:
