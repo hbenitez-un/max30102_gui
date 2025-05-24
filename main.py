@@ -206,7 +206,7 @@ class MainApp(QMainWindow):
 
                     self.csv_data.append((timestamp, readable_time, ir, f"{bpm:.1f}", status))
 
-                time.sleep(0.01)
+                time.sleep(0.04)
 
             except Exception as e:
                 print(f"Error reading sensor: {e}")
