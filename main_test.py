@@ -14,6 +14,9 @@ from datetime import datetime
 import os
 from sensor.max30102 import MAX30102
 
+SAMPLE_FREQ = 25
+MA_SIZE = 4
+BUFFER_SIZE = 100
 
 class DataEmitter(QObject):
     """
@@ -180,8 +183,8 @@ class MainApp(QMainWindow):
 
                     # Add new IR sample
                     self.ir_data.append(ir)
-                    if len(self.ir_data) > 800:  # Keep 5 seconds of data at 100Hz
-                        self.ir_data = self.ir_data[-800:]
+                    if len(self.ir_data) > 100:  # Keep 5 seconds of data at 100Hz
+                        self.ir_data = self.ir_data[-100:]
 
                     bpm = 0
                     status = "No data"
@@ -191,7 +194,7 @@ class MainApp(QMainWindow):
                         status = "No finger detected"
                         bpm = 0
                         self.bpm_history.clear()
-                    elif len(self.ir_data) >= 600:  # At least 4 sec of data to calculate BPM
+                    elif len(self.ir_data) >= 100:  # At least 4 sec of data to calculate BPM
                         bpm = self.calc_bpm(self.ir_data)
                         status = self.classify_bpm(bpm)
 
@@ -206,7 +209,7 @@ class MainApp(QMainWindow):
 
                     self.csv_data.append((timestamp, readable_time, ir, f"{bpm:.1f}", status))
 
-                time.sleep(0.01)
+                time.sleep(0.04)
 
             except Exception as e:
                 print(f"Error reading sensor: {e}")
@@ -242,36 +245,7 @@ class MainApp(QMainWindow):
         y = filtfilt(b, a, data)
         return y
 
-    def calc_bpm(self, ir_data, fs=100):
-        """
-        Calculate beats per minute (BPM) from IR data using peak detection.
-        :param ir_data: list or numpy array of IR data samples
-        :param fs: sampling frequency in Hz (default 100 Hz)
-        :return: calculated BPM as float
-        """
-        '''filtered = self.butter_lowpass_filter(ir_data, cutoff=2.5, fs=fs, order=2)
-        # Detect peaks that are at least 0.6 seconds apart
-        peaks, _ = find_peaks(filtered, distance=fs * 0.6)
-
-        if len(peaks) < 2:
-            return 0  # Not enough peaks to calculate BPM
-
-        # Calculate RR intervals in seconds between detected peaks
-        rr_intervals = np.diff(peaks) / fs
-        bpm = 60 / np.mean(rr_intervals)  # Convert average interval to BPM
-        return bpm'''
-        
-        filtered = self.butter_bandpass_filter(ir_data, lowcut=0.7, highcut=3.0, fs=fs, order=2)
-        peaks, _ = find_peaks(filtered, distance=fs * 0.6)
-        
-        if len(peaks) < 2:
-            return 0
-        
-        rr_intervals = np.diff(peaks) / fs
-        bpm = 60 / np.mean(rr_intervals)
-        return bpm
-
-
+    
     def classify_bpm(self, bpm):
         """
         Classify the heart rate status based on BPM value.
@@ -310,6 +284,73 @@ class MainApp(QMainWindow):
             writer.writerows(self.csv_data)
 
         print("Data exported to:", file_name)
+
+    def calc_bpm(self, ir_data):
+        if len(ir_data) < BUFFER_SIZE:
+            return 0  # No calcular si no hay suficientes muestras
+
+        ir_segment = np.array(ir_data[-BUFFER_SIZE:])
+        ir_mean = int(np.mean(ir_segment))
+        x = -1 * (ir_segment - ir_mean)
+
+        for i in range(len(x) - MA_SIZE):
+            x[i] = np.sum(x[i:i+MA_SIZE]) / MA_SIZE
+
+        n_th = int(np.mean(x))
+        n_th = max(30, min(n_th, 60))  # Umbral adaptativo entre 30 y 60
+
+        valley_locs, n_peaks = find_peaks(x, BUFFER_SIZE, n_th, 4, 15)
+
+        if n_peaks >= 2:
+            peak_interval_sum = sum(valley_locs[i] - valley_locs[i-1] for i in range(1, n_peaks))
+            avg_interval = peak_interval_sum / (n_peaks - 1)
+            hr = int(SAMPLE_FREQ * 60 / avg_interval)
+            return hr
+        else:
+            return 0  # No se pudo calcular BPM
+
+    def find_peaks(x, size, min_height, min_dist, max_num):
+        valley_locs, n_peaks = find_peaks_above_min_height(x, size, min_height, max_num)
+        valley_locs, n_peaks = remove_close_peaks(n_peaks, valley_locs, x, min_dist)
+        n_peaks = min(n_peaks, max_num)
+        return valley_locs, n_peaks
+
+    def find_peaks_above_min_height(x, size, min_height, max_num):
+        i = 0
+        n_peaks = 0
+        valley_locs = []
+        while i < size - 1:
+            if x[i] > min_height and x[i] > x[i - 1]:
+                n_width = 1
+                while i + n_width < size - 1 and x[i] == x[i + n_width]:
+                    n_width += 1
+                if x[i] > x[i + n_width] and n_peaks < max_num:
+                    valley_locs.append(i)
+                    n_peaks += 1
+                    i += n_width + 1
+                else:
+                    i += n_width
+            else:
+                i += 1
+        return valley_locs, n_peaks
+
+    def remove_close_peaks(n_peaks, valley_locs, x, min_dist):
+        sorted_indices = sorted(valley_locs, key=lambda i: x[i], reverse=True)
+        i = -1
+        while i < n_peaks:
+            old_n_peaks = n_peaks
+            n_peaks = i + 1
+            j = i + 1
+            while j < old_n_peaks:
+                n_dist = sorted_indices[j] - sorted_indices[i] if i != -1 else sorted_indices[j] + 1
+                if abs(n_dist) > min_dist:
+                    sorted_indices[n_peaks] = sorted_indices[j]
+                    n_peaks += 1
+                j += 1
+            i += 1
+        sorted_indices = sorted(sorted_indices[:n_peaks])
+        return sorted_indices, n_peaks
+    
 
     def closeEvent(self, event):
         """
