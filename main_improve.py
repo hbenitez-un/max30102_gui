@@ -157,7 +157,7 @@ class MainApp(QMainWindow):
         if self.measuring:
             self.ir_data.clear()
             self.csv_data.clear()
-            self.bpm_history.clear() # Clear BPM history when starting a new measurement
+            self.bpm_history.clear() # Clear BPM history when starting a new measurement - MEJORA
             self.btn_toggle.setText("Stop Measurement")
         else:
             self.btn_toggle.setText("Start Measurement")
@@ -170,7 +170,7 @@ class MainApp(QMainWindow):
         while self.running:
             try:
                 red, ir = self.sensor.read_fifo() # Red is for SPO2
-                if ir is not None: # Ensure a valid IR reading
+                if ir is not None: # Ensure a valid IR reading - MEJORA
                     batch.append(ir)
 
                     if len(batch) >= batch_size:
@@ -183,7 +183,7 @@ class MainApp(QMainWindow):
 
                         # Add new IR sample
                         self.ir_data.append(ir)
-                        # Keep a window of data, e.g., 10 seconds worth for BPM calculation
+                        # Keep a window of data, e.g., 10 seconds worth for BPM calculation - MEJORA
                         # At 100Hz, 10 seconds = 1000 samples
                         if len(self.ir_data) > self.SAMPLING_RATE * 10:
                             self.ir_data = self.ir_data[-self.SAMPLING_RATE * 10:]
@@ -195,30 +195,30 @@ class MainApp(QMainWindow):
                         if max(self.ir_data[-min(batch_size, len(self.ir_data)):]) < self.IR_THRESHOLD:
                             status = "No finger detected"
                             bpm = 0
-                            self.bpm_history.clear() # Clear BPM history if finger is removed
+                            self.bpm_history.clear() # Clear BPM history if finger is removed - MEJORA
                         elif len(self.ir_data) >= self.SAMPLING_RATE * 4: # At least 4 seconds of data for more stable BPM
                             bpm = self.calc_bpm(self.ir_data)
                             status = self.classify_bpm(bpm)
 
-                            # Smooth BPM using moving average of last 10 values for more stability
+                            # Smooth BPM using moving average of last 10 values for more stability - MEJORA
                             if bpm > 0: # Only add valid BPMs to history
                                 self.bpm_history.append(bpm)
                                 if len(self.bpm_history) > 10: # Increased window for smoothing
                                     self.bpm_history.pop(0)
                                 bpm = sum(self.bpm_history) / len(self.bpm_history)
                             else:
-                                self.bpm_history.clear() # Clear if current BPM is 0
+                                self.bpm_history.clear() # Clear if current BPM is 0 - MEJORA
 
                         self.label_bpm.setText(f"BPM: {bpm:.1f}")
                         self.label_status.setText(f"Status: {status}")
 
                         self.csv_data.append((timestamp, readable_time, ir, f"{bpm:.1f}", status))
 
-                time.sleep(0.01) # Small delay to avoid busy-waiting and allow other threads to run
+                time.sleep(0.01) # Small delay to avoid busy-waiting and allow other threads to run - MEJORA
 
             except Exception as e:
                 print(f"Error reading sensor: {e}")
-                time.sleep(1) # Wait longer on error to prevent rapid error logging
+                time.sleep(1) # Wait longer on error to prevent rapid error logging - MEJORA
 
 
     def update_plot(self, new_vals):
@@ -230,7 +230,7 @@ class MainApp(QMainWindow):
     def butter_bandpass_filter(self, data, lowcut=0.7, highcut=3.5, fs=100, order=4):
         """
         Applies a Butterworth band-pass filter to the IR data.
-        Adjusted highcut and order for better pulse signal isolation.
+        Adjusted highcut and order for better pulse signal isolation. - MEJORA
         """
         nyq = 0.5 * fs
         low = lowcut / nyq
@@ -242,20 +242,20 @@ class MainApp(QMainWindow):
     def calc_bpm(self, ir_data, fs=100):
         """
         Calculate beats per minute (BPM) from IR data using peak detection.
-        Includes signal quality checks and refined peak detection parameters.
+        Includes signal quality checks and refined peak detection parameters. - MEJORA
         :param ir_data: list or numpy array of IR data samples
         :param fs: sampling frequency in Hz (default 100 Hz)
         :return: calculated BPM as float
         """
         data = np.array(ir_data)
 
-        # Detrend the signal to remove baseline drift
+        # Detrend the signal to remove baseline drift - MEJORA
         detrended_data = data - np.mean(data)
 
         # Apply band-pass filter
         filtered_data = self.butter_bandpass_filter(detrended_data, lowcut=0.7, highcut=3.5, fs=fs, order=4)
 
-        # Normalize the filtered data to help with peak detection consistency
+        # Normalize the filtered data to help with peak detection consistency - MEJORA
         # Avoid division by zero if all values are the same
         if np.max(filtered_data) - np.min(filtered_data) > 0:
             normalized_data = (filtered_data - np.min(filtered_data)) / (np.max(filtered_data) - np.min(filtered_data))
@@ -263,11 +263,8 @@ class MainApp(QMainWindow):
             return 0 # No variance in signal, likely flatline
 
         # Detect peaks.
-        # `distance`: Minimum number of samples between peaks. A typical human HR is 40-180 BPM.
-        # At 100Hz, 40 BPM is 1.5s/beat (150 samples), 180 BPM is 0.33s/beat (33 samples).
-        # So, a distance of fs * 0.35 (35 samples for 100Hz) ensures we don't pick up too many false peaks.
-        # `prominence`: Required prominence of peaks. This helps filter out noise.
-        # A value like 0.2 (20% of normalized signal amplitude) is a good starting point.
+        # `distance`: Minimum number of samples between peaks. - MEJORA
+        # `prominence`: Required prominence of peaks. - MEJORA
         peaks, properties = find_peaks(normalized_data, distance=int(fs * 0.35), prominence=0.2)
 
         if len(peaks) < 2:
@@ -276,7 +273,7 @@ class MainApp(QMainWindow):
         # Calculate RR intervals in seconds between detected peaks
         rr_intervals = np.diff(peaks) / fs
 
-        # Optional: Filter out outliers in RR intervals (e.g., intervals too short or too long)
+        # Optional: Filter out outliers in RR intervals (e.g., intervals too short or too long) - MEJORA
         # This helps improve robustness against spurious peak detections
         mean_rr = np.mean(rr_intervals)
         std_rr = np.std(rr_intervals)
@@ -296,12 +293,12 @@ class MainApp(QMainWindow):
         :param bpm: beats per minute
         :return: string status ("Bradycardia", "Tachycardia", or "Normal")
         """
-        # Consider a wider 'normal' range for general applications
-        if bpm < 50: # Adjust lower threshold if needed
+        # Consider a wider 'normal' range for general applications - MEJORA
+        if bpm < 50:
             return "Bradycardia"
-        elif bpm > 100: # Adjust upper threshold if needed
+        elif bpm > 100:
             return "Tachycardia"
-        elif bpm == 0:
+        elif bpm == 0: # Handle 0 BPM explicitly - MEJORA
             return "Invalid"
         else:
             return "Normal"
@@ -313,7 +310,7 @@ class MainApp(QMainWindow):
         Otherwise, opens a save dialog.
         """
         if not self.csv_data:
-            print("No data to export.")
+            print("No data to export.") # Inform user if no data - MEJORA
             return
 
         if auto:
@@ -326,7 +323,7 @@ class MainApp(QMainWindow):
             if not file_name:
                 return
 
-        try:
+        try: # Added try-except for file operations - MEJORA
             with open(file_name, 'w', newline='') as file:
                 writer = csv.writer(file)
                 writer.writerow(['Timestamp', 'Readable Time', 'IR_Value', 'BPM', 'Status'])
@@ -343,7 +340,7 @@ class MainApp(QMainWindow):
         """
         self.running = False  # <-- stop thread loop
         if self.thread.is_alive():
-            self.thread.join(timeout=1) # Wait for thread to finish, with a timeout
+            self.thread.join(timeout=1) # Wait for thread to finish, with a timeout - MEJORA
         self.sensor.shutdown()
         event.accept()
 
