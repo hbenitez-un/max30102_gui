@@ -18,7 +18,7 @@ A Python-based graphical user interface (GUI) for real-time visualization and he
 
 ## 📷 Screenshot
 
-*(You'll want to insert your screenshot here. GitHub will automatically display an image if you put the direct link or path to it.)*
+![alt text](media\image.png)
 
 ---
 
