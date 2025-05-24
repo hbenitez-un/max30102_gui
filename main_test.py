@@ -41,7 +41,7 @@ class PulsePlot(pg.PlotWidget):
         self.showGrid(x=True, y=True)
 
         self.curve = self.plot(pen=pg.mkPen(color='r', width=2))  # Red line for data
-        self.buffer_size = 100  # Number of samples to keep in buffer
+        self.buffer_size = BUFFER_SIZE  # Number of samples to keep in buffer
         self.data = np.zeros(self.buffer_size, dtype=int)  # Circular buffer for IR values
         self.ptr = 0  # Current index in the buffer
 
@@ -170,7 +170,10 @@ class MainApp(QMainWindow):
 
         while self.running:
             try:
-                red, ir = self.sensor.read_fifo()
+                fifo_data = self.sensor.read_fifo()
+                red = fifo_data['red']
+                ir = fifo_data['ir']
+
                 batch.append(ir)
 
                 if len(batch) >= batch_size:
@@ -309,13 +312,13 @@ class MainApp(QMainWindow):
         else:
             return 0  # No se pudo calcular BPM
 
-    def find_peaks(x, size, min_height, min_dist, max_num):
+    def find_peaks(self,x, size, min_height, min_dist, max_num):
         valley_locs, n_peaks = find_peaks_above_min_height(x, size, min_height, max_num)
         valley_locs, n_peaks = remove_close_peaks(n_peaks, valley_locs, x, min_dist)
         n_peaks = min(n_peaks, max_num)
         return valley_locs, n_peaks
 
-    def find_peaks_above_min_height(x, size, min_height, max_num):
+    def find_peaks_above_min_height(self, x, size, min_height, max_num):
         i = 0
         n_peaks = 0
         valley_locs = []
@@ -334,7 +337,7 @@ class MainApp(QMainWindow):
                 i += 1
         return valley_locs, n_peaks
 
-    def remove_close_peaks(n_peaks, valley_locs, x, min_dist):
+    def remove_close_peaks(self,n_peaks, valley_locs, x, min_dist):
         sorted_indices = sorted(valley_locs, key=lambda i: x[i], reverse=True)
         i = -1
         while i < n_peaks:
