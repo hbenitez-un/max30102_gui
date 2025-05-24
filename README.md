@@ -18,7 +18,7 @@ A Python-based graphical user interface (GUI) for real-time visualization and he
 
 ## 📷 Screenshot
 
-![GUI](.\media\image.png)
+![GUI](https://github.com/hbenitez-un/max30102_gui/blob/main/media/image.png)
 
 ---
 
