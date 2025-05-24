@@ -136,6 +136,7 @@ class MainApp(QMainWindow):
         # Create data emitter for thread-safe signal emission
         self.data_emitter = DataEmitter()
         self.data_emitter.new_data.connect(self.update_plot)
+        self.running = True  # <-- flag to control the sensor thread
 
         # Start the sensor reading thread
         self.thread = threading.Thread(target=self.read_sensor)
@@ -160,7 +161,7 @@ class MainApp(QMainWindow):
             batch_size = 10
             batch = []
 
-            while True:
+            while self.running: # Runs only when sensor is running
                 try:
                     red, ir = self.sensor.read_fifo()
                     batch.append(ir)
@@ -287,6 +288,7 @@ class MainApp(QMainWindow):
         Handles application close event.
         Properly shuts down the sensor.
         """
+        self.running = False  # <-- stop thread loop
         self.sensor.shutdown()
         event.accept()
 
