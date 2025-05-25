@@ -3,6 +3,8 @@
 A Python-based graphical user interface (GUI) for real-time visualization and heart rate analysis using the **MAX30102 pulse oximeter sensor**. Designed for the **Raspberry Pi**.
 
 ✅ Tested on Raspberry Pi 3B.
+✅ Tested on Python 3.11.2.
+
 
 ---
 
@@ -12,7 +14,7 @@ A Python-based graphical user interface (GUI) for real-time visualization and he
 * Real-time BPM calculation
 * Bradycardia & Tachycardia detection
 * Modular and installable as a Python package
-* Data export: Allows saving measurement data to CSV files for further analysis.
+* Data export: Saving measurement data to CSV files
 
 ---
 
@@ -36,7 +38,7 @@ A Python-based graphical user interface (GUI) for real-time visualization and he
 2.  **Clone the repository:**
 
     ```bash
-    git clone [https://github.com/hbenitez-un/max30102_gui.git](https://github.com/hbenitez-un/max30102_gui.git)
+    git clone https://github.com/hbenitez-un/max30102_gui.git
     cd max30102_gui
     ```
 
@@ -49,7 +51,11 @@ A Python-based graphical user interface (GUI) for real-time visualization and he
 
 ### 💡 Using system-installed PyQt5 in virtual environment
 
-If you want to use the system-installed PyQt5 instead of installing it inside the venv:
+#### Prerequisite - Install PyQt5 from System Repositories:
+    ```bash
+    sudo apt install python3-pyqt5 qt5-default
+    ```
+If you want to use the system-installed PyQt5 instead of installing it inside the venv (Recommended):
 
 1.  **Exit the virtual environment:**
 
