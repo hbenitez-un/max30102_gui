@@ -6,7 +6,7 @@ A Python-based graphical user interface (GUI) for real-time visualization and he
 ✅ Tested on Raspberry Pi OS Lite (headless).
 ✅ Tested on Python 3.11.2.
 
-** Important** 
+**Important** 
 Using MobaXterm for remote access and display forwarding on Raspberry Pi OS Lite (no GUI). This allows you to run the GUI application over SSH from a Windows PC, even when the Pi itself has no desktop environment.
 
 ---
