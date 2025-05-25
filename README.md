@@ -49,7 +49,7 @@ A Python-based graphical user interface (GUI) for real-time visualization and he
     source venv/bin/activate
     ```
 
-### 💡 Using system-installed PyQt5 in virtual environment
+### 💡 Using system-installed PyQt5 in virtual environment (Recommended)
 
 #### Prerequisite - Install PyQt5 from System Repositories:
     ```bash
@@ -105,6 +105,8 @@ There are two ways to install the package:
     ```bash
     max30102-gui
     ```
+
+The command executes main.py automatically.
 
 ---
 
