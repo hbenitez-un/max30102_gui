@@ -52,9 +52,9 @@ A Python-based graphical user interface (GUI) for real-time visualization and he
 ### 💡 Using system-installed PyQt5 in virtual environment (Recommended)
 
 #### Prerequisite - Install PyQt5 from System Repositories:
-    ```bash
+    
     sudo apt install python3-pyqt5 qt5-default
-    ```
+    
 If you want to use the system-installed PyQt5 instead of installing it inside the venv (Recommended):
 
 1.  **Exit the virtual environment:**
