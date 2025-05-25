@@ -2,9 +2,9 @@
 
 A Python-based graphical user interface (GUI) for real-time visualization and heart rate analysis using the **MAX30102 pulse oximeter sensor**. Designed for the **Raspberry Pi**.
 
-✅ Tested on Raspberry Pi 3B.
-✅ Tested on Raspberry Pi OS Lite (headless).
-✅ Tested on Python 3.11.2.
+    ✅ Tested on Raspberry Pi 3B.
+    ✅ Tested on Raspberry Pi OS Lite (headless).
+    ✅ Tested on Python 3.11.2.
 
 **Important:** 
     Use MobaXterm, or a similar tool, for remote access and X11 display forwarding on Raspberry Pi OS Lite (no GUI). This allows you to run the GUI application over SSH from a Windows PC, even when the Pi itself has no desktop environment.
